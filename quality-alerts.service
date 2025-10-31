@@ -1,0 +1,18 @@
+[Unit]
+Description=Quality Alerts Flask Web Server
+After=network.target
+
+[Service]
+Type=simple
+User=sanath
+WorkingDirectory=/home/sanath/quality-alerts
+Environment="PATH=/home/sanath/quality-alerts/venv/bin"
+ExecStart=/home/sanath/quality-alerts/venv/bin/python /home/sanath/quality-alerts/app.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/tmp/flask_server.log
+StandardError=append:/tmp/flask_server.log
+
+[Install]
+WantedBy=multi-user.target
+

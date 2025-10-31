@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quality Alerts Dashboard - Mortality Monitoring</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Quality Alerts Dashboard</h1>
+            <p class="subtitle">Mortality Rate Monitoring System</p>
+        </header>
+
+        <div class="controls">
+            <div class="control-group">
+                <label for="hospital-select">Hospital:</label>
+                <select id="hospital-select">
+                    <option value="">Loading hospitals...</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="start-date">Start Date:</label>
+                <input type="date" id="start-date">
+            </div>
+
+            <div class="control-group">
+                <label for="end-date">End Date:</label>
+                <input type="date" id="end-date">
+            </div>
+
+            <div class="control-group">
+                <button id="update-btn" class="btn-primary">Update Chart</button>
+            </div>
+        </div>
+
+        <div class="stats-container">
+            <div class="stat-card">
+                <div class="stat-label">Average Mortality Rate</div>
+                <div class="stat-value" id="avg-mortality">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Standard Deviation</div>
+                <div class="stat-value" id="std-dev">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Alert Threshold (+3SD)</div>
+                <div class="stat-value" id="threshold">-</div>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <canvas id="mortality-chart"></canvas>
+        </div>
+
+        <div class="chart-container">
+            <h3>Daily Patient Bed Days (PBD)</h3>
+            <canvas id="pbd-chart"></canvas>
+        </div>
+
+        <div id="alerts-container" class="alerts-container" style="display: none;">
+            <h3>Alerts</h3>
+            <div id="alerts-list"></div>
+        </div>
+
+        <div class="raw-data-container">
+            <h3>Raw Data</h3>
+            <div id="raw-data-table-container">
+                <table id="raw-data-table" class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Hospital</th>
+                            <th>Month</th>
+                            <th>Year</th>
+                            <th>Total Patients</th>
+                            <th>Deaths</th>
+                            <th>Mortality Rate (%)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="raw-data-table-body">
+                        <tr>
+                            <td colspan="6" class="no-data">Select a hospital and date range, then click "Update Chart" to view data.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Immediate test - should appear in console immediately
+        console.log('[Quality Alerts] Inline script executed!');
+    </script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script>
+        // Test after main.js loads
+        console.log('[Quality Alerts] After main.js script tag');
+    </script>
+</body>
+</html>
+
+
+

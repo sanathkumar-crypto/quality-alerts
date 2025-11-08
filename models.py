@@ -191,9 +191,15 @@ def get_previous_month_deaths(all_data: pd.DataFrame, current_year: int, current
     return None
 
 
-def calculate_model_results(model_id: str) -> List[Dict]:
+def calculate_model_results(model_id: str, apply_death_increase_filter: bool = False) -> List[Dict]:
     """
     Calculate alert results for a specific model.
+    
+    Args:
+        model_id: Model ID to calculate (e.g., 'model10')
+        apply_death_increase_filter: If True, only include hospitals where current month deaths
+            is at least 2 higher than previous month. This filter is typically used for
+            Google Chat alerts to reduce noise, but not for dashboard display.
     
     Models:
     1-4: Deaths-based (3mo/6mo highest, 3mo/6mo avg+1SD)
@@ -376,19 +382,21 @@ def calculate_model_results(model_id: str) -> List[Dict]:
                 # Check if all 3 months have data and show increasing trend
                 if (rate_current is not None and rate_prev is not None and rate_prev_prev is not None and
                     rate_current > rate_prev > rate_prev_prev):
-                    # EXCLUSION RULE: Exclude hospitals where current month deaths is NOT higher than 
+                    # EXCLUSION RULE: Only apply if apply_death_increase_filter is True
+                    # Exclude hospitals where current month deaths is NOT higher than 
                     # previous month by more than 2. In other words, exclude if (current - previous) <= 2
                     # This means: exclude if current <= previous + 2
-                    prev_month_deaths = get_previous_month_deaths(all_data, current_year, current_month)
-                    if prev_month_deaths is not None:
-                        increase = current_deaths - prev_month_deaths
-                        if increase <= 2:
-                            print(f"[Models] Hospital '{hospital}': EXCLUDING from alert - current month deaths ({current_deaths}) is not higher than previous month ({prev_month_deaths}) by more than 2 (increase: {increase})")
-                            continue  # Skip adding this hospital to alerts
-                    else:
-                        # Log when previous month data is not available (for debugging)
-                        if idx <= 10:  # Only log for first 10 hospitals to avoid spam
-                            print(f"[Models] Hospital '{hospital}': Previous month data not available, cannot apply exclusion rule (current deaths: {current_deaths})")
+                    if apply_death_increase_filter:
+                        prev_month_deaths = get_previous_month_deaths(all_data, current_year, current_month)
+                        if prev_month_deaths is not None:
+                            increase = current_deaths - prev_month_deaths
+                            if increase <= 2:
+                                print(f"[Models] Hospital '{hospital}': EXCLUDING from alert - current month deaths ({current_deaths}) is not higher than previous month ({prev_month_deaths}) by more than 2 (increase: {increase})")
+                                continue  # Skip adding this hospital to alerts
+                        else:
+                            # Log when previous month data is not available (for debugging)
+                            if idx <= 10:  # Only log for first 10 hospitals to avoid spam
+                                print(f"[Models] Hospital '{hospital}': Previous month data not available, cannot apply exclusion rule (current deaths: {current_deaths})")
                     
                     # Get last 6 months mortality data
                     last_6_months = get_last_6_months_mortality(all_data, current_year, current_month)
@@ -517,20 +525,23 @@ def calculate_model_results(model_id: str) -> List[Dict]:
                     if is_smr and (smr_value is None or pd.isna(smr_value)):
                         continue
                     
-                    # EXCLUSION RULE: Exclude hospitals where current month deaths is NOT higher than 
+                    # EXCLUSION RULE: Only apply if apply_death_increase_filter is True
+                    # Exclude hospitals where current month deaths is NOT higher than 
                     # previous month by more than 2. In other words, exclude if (current - previous) <= 2
                     # This means: exclude if current <= previous + 2
                     # This applies to all models (1-12) to filter out minor fluctuations
-                    prev_month_deaths = get_previous_month_deaths(all_data, current_year, current_month)
-                    if prev_month_deaths is not None:
-                        increase = current_deaths - prev_month_deaths
-                        if increase <= 2:
-                            print(f"[Models] Hospital '{hospital}': EXCLUDING from alert - current month deaths ({current_deaths}) is not higher than previous month ({prev_month_deaths}) by more than 2 (increase: {increase})")
-                            continue  # Skip adding this hospital to alerts
-                    else:
-                        # Log when previous month data is not available (for debugging)
-                        if idx <= 10:  # Only log for first 10 hospitals to avoid spam
-                            print(f"[Models] Hospital '{hospital}': Previous month data not available, cannot apply exclusion rule (current deaths: {current_deaths})")
+                    # NOTE: This filter is typically used for Google Chat alerts, not for dashboard display
+                    if apply_death_increase_filter:
+                        prev_month_deaths = get_previous_month_deaths(all_data, current_year, current_month)
+                        if prev_month_deaths is not None:
+                            increase = current_deaths - prev_month_deaths
+                            if increase <= 2:
+                                print(f"[Models] Hospital '{hospital}': EXCLUDING from alert - current month deaths ({current_deaths}) is not higher than previous month ({prev_month_deaths}) by more than 2 (increase: {increase})")
+                                continue  # Skip adding this hospital to alerts
+                        else:
+                            # Log when previous month data is not available (for debugging)
+                            if idx <= 10:  # Only log for first 10 hospitals to avoid spam
+                                print(f"[Models] Hospital '{hospital}': Previous month data not available, cannot apply exclusion rule (current deaths: {current_deaths})")
                     
                     # Get last 6 months mortality data
                     # Include current month live data if we queried it

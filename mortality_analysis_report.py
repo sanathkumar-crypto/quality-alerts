@@ -43,8 +43,8 @@ def analyze_hospital_trends(df: pd.DataFrame) -> Tuple[List[Dict], List[Dict]]:
     """
     Analyze hospitals to identify worsened and improved mortality trends.
     
-    Worsened: October mortality > highest in May-September
-    Improved: October mortality < lowest in May-September
+    Worsened: October deaths >= September deaths + 2
+    Improved: October deaths <= September deaths - 2
     
     Args:
         df: DataFrame with monthly mortality data
@@ -56,17 +56,30 @@ def analyze_hospital_trends(df: pd.DataFrame) -> Tuple[List[Dict], List[Dict]]:
     improved = []
     
     # Hospitals to exclude from analysis
-    excluded_hospitals = ['GSVM Kanpur', 'The Children\'s Hospital - Shillong', 'The Children\'s Hospital Shillong', 'Swaroop Rani Hospital - Prayagraj', 'Sai Children Hospital - Tohana']
+    excluded_hospitals = [
+        'GSVM Kanpur', 
+        'The Children\'s Hospital - Shillong', 
+        'The Children\'s Hospital Shillong', 
+        'Swaroop Rani Hospital - Prayagraj', 
+        'Sai Children Hospital - Tohana',
+        'Heritage Hospital - Gorakhpur',
+        'SHRI Guntur',
+        'MLB Jhansi',
+        'SNMC Agra'
+    ]
     
     # Get unique hospitals and filter out excluded ones
     hospitals = df['hospital_name'].unique()
     hospitals = [h for h in hospitals if h not in excluded_hospitals]
     
+    # Also exclude any hospital with "child" in the name (case-insensitive)
+    hospitals = [h for h in hospitals if 'child' not in h.lower()]
+    
     for hospital in hospitals:
         hospital_data = df[df['hospital_name'] == hospital].copy()
         hospital_data = hospital_data.sort_values(['year', 'month'])
         
-        # Check if we have data for all required months
+        # Check if we have data for all required months (May-October for display)
         months_present = set(hospital_data['month'].values)
         required_months = set(range(5, 11))  # May (5) to October (10)
         
@@ -74,120 +87,59 @@ def analyze_hospital_trends(df: pd.DataFrame) -> Tuple[List[Dict], List[Dict]]:
             # Skip hospitals without complete data
             continue
         
-        # Get October data
+        # Get September and October data for analysis
+        september_data = hospital_data[hospital_data['month'] == 9]
         october_data = hospital_data[hospital_data['month'] == 10]
-        if len(october_data) == 0:
+        
+        if len(september_data) == 0 or len(october_data) == 0:
             continue
         
-        october_rate = float(october_data.iloc[0]['mortality_rate'])
+        sept_deaths = int(september_data.iloc[0]['deaths'])
+        oct_deaths = int(october_data.iloc[0]['deaths'])
+        sept_rate = float(september_data.iloc[0]['mortality_rate'])
+        oct_rate = float(october_data.iloc[0]['mortality_rate'])
         
-        # Get May-September data
-        may_sept_data = hospital_data[(hospital_data['month'] >= 5) & (hospital_data['month'] <= 9)]
-        if len(may_sept_data) == 0:
-            continue
+        # Calculate death difference
+        death_difference = oct_deaths - sept_deaths
         
-        may_sept_rates = may_sept_data['mortality_rate'].values
-        highest_prev = float(max(may_sept_rates))
-        lowest_prev = float(min(may_sept_rates))
-        
-        # Build monthly data dictionary
+        # Build monthly data dictionary with rates and deaths (for display)
         monthly_rates = {}
+        monthly_deaths = {}
         for _, row in hospital_data.iterrows():
-            monthly_rates[int(row['month'])] = float(row['mortality_rate'])
+            month_num = int(row['month'])
+            monthly_rates[month_num] = float(row['mortality_rate'])
+            monthly_deaths[month_num] = int(row['deaths']) if 'deaths' in row else 0
         
         hospital_info = {
             'hospital_name': hospital,
-            'october_rate': october_rate,
+            'october_rate': oct_rate,
+            'september_rate': sept_rate,
+            'october_deaths': oct_deaths,
+            'september_deaths': sept_deaths,
             'monthly_rates': monthly_rates,
-            'change_magnitude': 0.0,
-            'comparison_month': None,
-            'comparison_rate': 0.0
+            'monthly_deaths': monthly_deaths,
+            'death_difference': death_difference,
+            'rate_difference': oct_rate - sept_rate,
+            'change_magnitude': abs(death_difference),  # For sorting
+            'comparison_month': 9,  # September
+            'comparison_rate': sept_rate
         }
         
-        # Check for worsened (October > highest in May-September)
-        if october_rate > highest_prev:
-            hospital_info['change_magnitude'] = october_rate - highest_prev
-            hospital_info['comparison_rate'] = highest_prev
-            # Find which month had the highest rate
-            highest_month_data = may_sept_data[may_sept_data['mortality_rate'] == highest_prev]
-            hospital_info['comparison_month'] = int(highest_month_data.iloc[0]['month'])
+        # Check for worsened (October deaths >= September deaths + 2)
+        if death_difference >= 2:
             worsened.append(hospital_info)
         
-        # Check for improved (October < lowest in May-September)
-        elif october_rate < lowest_prev:
-            hospital_info['change_magnitude'] = lowest_prev - october_rate
-            hospital_info['comparison_rate'] = lowest_prev
-            # Find which month had the lowest rate
-            lowest_month_data = may_sept_data[may_sept_data['mortality_rate'] == lowest_prev]
-            hospital_info['comparison_month'] = int(lowest_month_data.iloc[0]['month'])
+        # Check for improved (October deaths <= September deaths - 2)
+        elif death_difference <= -2:
             improved.append(hospital_info)
     
-    # Sort by magnitude of change (descending)
-    worsened_sorted = sorted(worsened, key=lambda x: x['change_magnitude'], reverse=True)
-    improved_sorted = sorted(improved, key=lambda x: x['change_magnitude'], reverse=True)
+    # Sort by death difference magnitude (descending for worsened, ascending for improved)
+    worsened_sorted = sorted(worsened, key=lambda x: x['death_difference'], reverse=True)
+    improved_sorted = sorted(improved, key=lambda x: x['death_difference'], reverse=False)  # Most negative first
     
-    # Take top 5 for worsened, but for improved, take top 5 or all if less than 5
-    # If there are exactly 4, try to find one more with the next best improvement
+    # Take top 5 for each category
     worsened_final = worsened_sorted[:5]
-    improved_final = improved_sorted[:5] if len(improved_sorted) >= 5 else improved_sorted
-    
-    # If we have less than 5 improved hospitals, try to find additional ones
-    # by looking at hospitals with October rate lower than average of May-September
-    if len(improved_final) < 5:
-        # Get hospitals that haven't been included yet
-        included_names = {h['hospital_name'] for h in improved_final}
-        remaining_hospitals = [h for h in hospitals if h not in included_names]
-        
-        # Look for hospitals where October is lower than average of May-September
-        additional_candidates = []
-        for hospital in remaining_hospitals:
-            hospital_data = df[df['hospital_name'] == hospital].copy()
-            hospital_data = hospital_data.sort_values(['year', 'month'])
-            
-            months_present = set(hospital_data['month'].values)
-            required_months = set(range(5, 11))
-            
-            if not required_months.issubset(months_present):
-                continue
-            
-            october_data = hospital_data[hospital_data['month'] == 10]
-            if len(october_data) == 0:
-                continue
-            
-            october_rate = float(october_data.iloc[0]['mortality_rate'])
-            may_sept_data = hospital_data[(hospital_data['month'] >= 5) & (hospital_data['month'] <= 9)]
-            
-            if len(may_sept_data) == 0:
-                continue
-            
-            avg_prev = float(may_sept_data['mortality_rate'].mean())
-            
-            # If October is lower than average (even if not lower than minimum)
-            if october_rate < avg_prev:
-                monthly_rates = {}
-                for _, row in hospital_data.iterrows():
-                    monthly_rates[int(row['month'])] = float(row['mortality_rate'])
-                
-                change_magnitude = avg_prev - october_rate
-                lowest_prev = float(may_sept_data['mortality_rate'].min())
-                lowest_month_data = may_sept_data[may_sept_data['mortality_rate'] == lowest_prev]
-                
-                additional_candidates.append({
-                    'hospital_name': hospital,
-                    'october_rate': october_rate,
-                    'monthly_rates': monthly_rates,
-                    'change_magnitude': change_magnitude,
-                    'comparison_month': int(lowest_month_data.iloc[0]['month']) if len(lowest_month_data) > 0 else None,
-                    'comparison_rate': avg_prev,
-                    'is_secondary': True  # Mark as secondary criteria
-                })
-        
-        # Sort additional candidates and add the best one if we need it
-        if additional_candidates:
-            additional_candidates.sort(key=lambda x: x['change_magnitude'], reverse=True)
-            # Add the best candidate to reach 5 hospitals
-            needed = 5 - len(improved_final)
-            improved_final.extend(additional_candidates[:needed])
+    improved_final = improved_sorted[:5]
     
     return worsened_final, improved_final
 
@@ -323,10 +275,11 @@ def generate_html_report(worsened: List[Dict], improved: List[Dict], output_file
 <body>
     <div class="container">
         <h1>Mortality Analysis Report</h1>
-        <div class="subtitle">May - October 2025 | Model 10 Analysis</div>
+        <div class="subtitle">May - October 2025 | Death Count Changes Analysis</div>
         
         <div class="section">
             <h2>Top 5 Hospitals - Worsened Mortality</h2>
+            <p style="color: #666; margin-bottom: 20px;">Hospitals where October 2025 deaths increased by 2 or more compared to September 2025 (October deaths >= September deaths + 2).</p>
 """
     
     # Add worsened section
@@ -353,7 +306,8 @@ def generate_html_report(worsened: List[Dict], improved: List[Dict], output_file
 """
             for month in [5, 6, 7, 8, 9, 10]:
                 rate = hospital['monthly_rates'].get(month, 0.0)
-                html += f"                            <td>{rate:.2f}%</td>\n"
+                deaths = hospital.get('monthly_deaths', {}).get(month, 0)
+                html += f"                            <td>{rate:.2f}% ({deaths})</td>\n"
             html += "                        </tr>\n"
         
         html += """                    </tbody>
@@ -373,6 +327,7 @@ def generate_html_report(worsened: List[Dict], improved: List[Dict], output_file
         
         <div class="section">
             <h2>Top 5 Hospitals - Improved Mortality</h2>
+            <p style="color: #666; margin-bottom: 20px;">Hospitals where October 2025 deaths decreased by 2 or more compared to September 2025 (October deaths <= September deaths - 2).</p>
 """
     
     if improved:
@@ -398,7 +353,8 @@ def generate_html_report(worsened: List[Dict], improved: List[Dict], output_file
 """
             for month in [5, 6, 7, 8, 9, 10]:
                 rate = hospital['monthly_rates'].get(month, 0.0)
-                html += f"                            <td>{rate:.2f}%</td>\n"
+                deaths = hospital.get('monthly_deaths', {}).get(month, 0)
+                html += f"                            <td>{rate:.2f}% ({deaths})</td>\n"
             html += "                        </tr>\n"
         
         html += """                    </tbody>
@@ -633,7 +589,7 @@ def generate_markdown_report(worsened: List[Dict], improved: List[Dict], output_
     md = f"""# Mortality Analysis Report
 
 **Analysis Period:** May - October 2025  
-**Model:** Model 10 Analysis  
+**Analysis Criteria:** Death count changes (September to October 2025)  
 **Generated:** {datetime.now().strftime("%B %d, %Y at %I:%M %p")}
 
 > **Note:** Interactive line charts are available in the HTML version of this report (`mortality_analysis_2025.html`).
@@ -642,7 +598,7 @@ def generate_markdown_report(worsened: List[Dict], improved: List[Dict], output_
 
 ## Top 5 Hospitals - Worsened Mortality
 
-Hospitals where October 2025 mortality rate is higher than the highest mortality rate in May-September 2025.
+Hospitals where October 2025 deaths increased by 2 or more compared to September 2025 (October deaths >= September deaths + 2).
 
 """
     
@@ -655,24 +611,25 @@ Hospitals where October 2025 mortality rate is higher than the highest mortality
             rates = []
             for month in [5, 6, 7, 8, 9, 10]:
                 rate = hospital['monthly_rates'].get(month, 0.0)
-                rates.append(f"{rate:.2f}%")
+                deaths = hospital.get('monthly_deaths', {}).get(month, 0)
+                rates.append(f"{rate:.2f}% ({deaths})")
             
             md += f"| **{hospital['hospital_name']}** | {' | '.join(rates)} |\n"
         
         md += "\n"
         md += "### Details\n\n"
         for i, hospital in enumerate(worsened, 1):
-            comparison_month_name = month_names.get(hospital['comparison_month'], 'N/A')
             md += f"{i}. **{hospital['hospital_name']}**\n"
-            md += f"   - October 2025: {hospital['october_rate']:.2f}%\n"
-            md += f"   - Highest previous (May-September): {hospital['comparison_rate']:.2f}% ({comparison_month_name})\n"
-            md += f"   - Change: +{hospital['change_magnitude']:.2f} percentage points\n\n"
+            md += f"   - September 2025: {hospital['september_rate']:.2f}% ({hospital['september_deaths']} deaths)\n"
+            md += f"   - October 2025: {hospital['october_rate']:.2f}% ({hospital['october_deaths']} deaths)\n"
+            md += f"   - Death change: +{hospital['death_difference']} deaths\n"
+            md += f"   - Rate change: {hospital['rate_difference']:+.2f} percentage points\n\n"
     else:
         md += "*No hospitals found with worsened mortality trends.*\n\n"
     
     md += "---\n\n"
     md += "## Top 5 Hospitals - Improved Mortality\n\n"
-    md += "Hospitals where October 2025 mortality rate is lower than the lowest mortality rate in May-September 2025.\n\n"
+    md += "Hospitals where October 2025 deaths decreased by 2 or more compared to September 2025 (October deaths <= September deaths - 2).\n\n"
     
     if improved:
         md += "| Hospital | May | June | July | August | September | October |\n"
@@ -682,22 +639,19 @@ Hospitals where October 2025 mortality rate is higher than the highest mortality
             rates = []
             for month in [5, 6, 7, 8, 9, 10]:
                 rate = hospital['monthly_rates'].get(month, 0.0)
-                rates.append(f"{rate:.2f}%")
+                deaths = hospital.get('monthly_deaths', {}).get(month, 0)
+                rates.append(f"{rate:.2f}% ({deaths})")
             
             md += f"| **{hospital['hospital_name']}** | {' | '.join(rates)} |\n"
         
         md += "\n"
         md += "### Details\n\n"
         for i, hospital in enumerate(improved, 1):
-            comparison_month_name = month_names.get(hospital['comparison_month'], 'N/A')
-            is_secondary = hospital.get('is_secondary', False)
             md += f"{i}. **{hospital['hospital_name']}**\n"
-            md += f"   - October 2025: {hospital['october_rate']:.2f}%\n"
-            if is_secondary:
-                md += f"   - Average previous (May-September): {hospital['comparison_rate']:.2f}%\n"
-            else:
-                md += f"   - Lowest previous (May-September): {hospital['comparison_rate']:.2f}% ({comparison_month_name})\n"
-            md += f"   - Change: -{hospital['change_magnitude']:.2f} percentage points\n\n"
+            md += f"   - September 2025: {hospital['september_rate']:.2f}% ({hospital['september_deaths']} deaths)\n"
+            md += f"   - October 2025: {hospital['october_rate']:.2f}% ({hospital['october_deaths']} deaths)\n"
+            md += f"   - Death change: {hospital['death_difference']} deaths\n"
+            md += f"   - Rate change: {hospital['rate_difference']:+.2f} percentage points\n\n"
     else:
         md += "*No hospitals found with improved mortality trends.*\n\n"
     

@@ -2,12 +2,37 @@
 Flask web application for quality alerts dashboard.
 """
 
+import os
 from flask import Flask, render_template, jsonify, request
 from database import MortalityDatabase
 from datetime import datetime, date
 import json
 import pandas as pd
 from bigquery_queries import query_daily_pbd, query_current_month_mortality_all_hospitals, query_current_month_mortality
+
+# Load environment variables from .env file FIRST, before importing other modules
+try:
+    from dotenv import load_dotenv
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    ENV_FILE = os.path.join(BASE_DIR, '.env')
+    if os.path.exists(ENV_FILE):
+        load_dotenv(ENV_FILE, override=True)
+        print(f"[Flask App] ✅ Loaded .env file from: {ENV_FILE}")
+        # Verify webhook URL is loaded
+        webhook_test = os.getenv("GOOGLE_CHAT_WEBHOOK_URL", "")
+        if webhook_test:
+            print(f"[Flask App] ✅ GOOGLE_CHAT_WEBHOOK_URL loaded (length: {len(webhook_test)})")
+        else:
+            print("[Flask App] ⚠️  WARNING: GOOGLE_CHAT_WEBHOOK_URL not found in .env file!")
+    else:
+        load_dotenv(override=True)
+        print(f"[Flask App] ⚠️  .env file not found at {ENV_FILE}, attempted to load from current directory")
+except ImportError:
+    print("[Flask App] ❌ python-dotenv not installed, skipping .env file loading")
+except Exception as e:
+    print(f"[Flask App] ❌ Error loading .env file: {e}")
+    import traceback
+    traceback.print_exc()
 
 app = Flask(__name__)
 
@@ -357,6 +382,27 @@ def get_model_results(model_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/test-webhook', methods=['GET'])
+def test_webhook():
+    """Test if webhook URL is configured."""
+    import os
+    try:
+        from dotenv import load_dotenv
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        ENV_FILE = os.path.join(BASE_DIR, '.env')
+        if os.path.exists(ENV_FILE):
+            load_dotenv(ENV_FILE, override=True)
+    except:
+        pass
+    
+    webhook_url = os.getenv("GOOGLE_CHAT_WEBHOOK_URL", "")
+    return jsonify({
+        'configured': bool(webhook_url),
+        'url_length': len(webhook_url),
+        'env_file_exists': os.path.exists(ENV_FILE) if 'ENV_FILE' in locals() else False
+    })
+
+
 @app.route('/api/send-alert', methods=['POST'])
 def send_alert():
     """Send alert to Google Chat for a specific model."""
@@ -365,23 +411,56 @@ def send_alert():
     
     try:
         data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body is required', 'success': False}), 400
+        
         model_id = data.get('model_id', 'model10')
         
         if not model_id:
-            return jsonify({'error': 'model_id is required'}), 400
+            return jsonify({'error': 'model_id is required', 'success': False}), 400
         
         print(f"[API] Sending alert for {model_id}...")
-        result = send_model_alert(model_id)
+        print(f"[API] Request data: {data}")
         
-        if result['success']:
-            return jsonify(result), 200
-        else:
-            return jsonify(result), 500
+        try:
+            result = send_model_alert(model_id)
+            
+            if result.get('success'):
+                return jsonify(result), 200
+            else:
+                # Still return 200 but with success=False so frontend can show the message
+                return jsonify(result), 200
+        
+        except ValueError as ve:
+            # This is likely the webhook URL error
+            error_msg = str(ve)
+            print(f"[API] ValueError in send_model_alert: {error_msg}")
+            traceback.print_exc()
+            return jsonify({
+                'error': error_msg,
+                'success': False,
+                'message': error_msg
+            }), 500
+        
+        except Exception as inner_e:
+            error_msg = f"Error in send_model_alert: {str(inner_e)}"
+            print(f"[API] Exception in send_model_alert: {error_msg}")
+            traceback.print_exc()
+            return jsonify({
+                'error': error_msg,
+                'success': False,
+                'message': error_msg
+            }), 500
     
     except Exception as e:
-        print(f"[API] Error sending alert: {e}")
+        error_msg = f"Error processing send-alert request: {str(e)}"
+        print(f"[API] Error sending alert: {error_msg}")
         traceback.print_exc()
-        return jsonify({'error': str(e), 'success': False}), 500
+        return jsonify({
+            'error': error_msg,
+            'success': False,
+            'message': error_msg
+        }), 500
 
 
 if __name__ == '__main__':

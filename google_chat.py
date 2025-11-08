@@ -2,15 +2,88 @@
 Google Chat integration for sending alert messages.
 """
 
+import os
 import requests
 import json
 from typing import List, Dict, Optional
 from datetime import datetime
 from models import calculate_model_results
 
+# Try to load environment variables from .env file
+# Get the directory where this file is located
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ENV_FILE = os.path.join(BASE_DIR, '.env')
 
-# Google Chat webhook URL
-GOOGLE_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAqw1Odpo/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=vPNrkZqIbX29ZpG-wsIDkebvJjrhZdC7cfhi-0DdjR4"
+try:
+    from dotenv import load_dotenv
+    # Try to load from project root directory
+    if os.path.exists(ENV_FILE):
+        load_dotenv(ENV_FILE)
+        print(f"[Google Chat] Loaded .env file from: {ENV_FILE}")
+    else:
+        # Fallback: try current directory
+        load_dotenv()
+        print(f"[Google Chat] Attempted to load .env from current directory")
+except ImportError:
+    # python-dotenv not installed, skip loading .env file
+    print("[Google Chat] python-dotenv not installed, skipping .env file loading")
+except Exception as e:
+    print(f"[Google Chat] Error loading .env file: {e}")
+
+def get_webhook_url() -> str:
+    """
+    Get the Google Chat webhook URL from environment variable.
+    This function ensures the .env file is loaded before reading the value.
+    """
+    # Always try to load .env file first to ensure it's loaded
+    try:
+        from dotenv import load_dotenv
+        env_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+        if os.path.exists(env_file_path):
+            load_dotenv(env_file_path, override=True)
+            print(f"[Google Chat] Loaded .env from: {env_file_path}")
+        else:
+            # Try current directory
+            load_dotenv(override=True)
+            print(f"[Google Chat] Attempted to load .env from current directory")
+    except ImportError:
+        print("[Google Chat] python-dotenv not installed")
+    except Exception as e:
+        print(f"[Google Chat] Error loading .env: {e}")
+    
+    webhook_url = os.getenv("GOOGLE_CHAT_WEBHOOK_URL", "")
+    
+    if webhook_url:
+        print(f"[Google Chat] Webhook URL found (length: {len(webhook_url)})")
+    else:
+        print("[Google Chat] WARNING: GOOGLE_CHAT_WEBHOOK_URL not found in environment!")
+        env_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+        print(f"[Google Chat] .env file path: {env_file_path}")
+        print(f"[Google Chat] .env file exists: {os.path.exists(env_file_path)}")
+        if os.path.exists(env_file_path):
+            # Try reading the file directly to debug
+            try:
+                with open(env_file_path, 'r') as f:
+                    content = f.read()
+                    if 'GOOGLE_CHAT_WEBHOOK_URL' in content:
+                        print("[Google Chat] .env file contains GOOGLE_CHAT_WEBHOOK_URL")
+                    else:
+                        print("[Google Chat] .env file does NOT contain GOOGLE_CHAT_WEBHOOK_URL")
+            except Exception as e:
+                print(f"[Google Chat] Error reading .env file: {e}")
+    
+    return webhook_url
+
+# Initialize webhook URL at module load (but can be reloaded if needed)
+GOOGLE_CHAT_WEBHOOK_URL = get_webhook_url()
+
+# Debug: Check if webhook URL is loaded (don't print the full URL for security)
+if GOOGLE_CHAT_WEBHOOK_URL:
+    print(f"[Google Chat] Webhook URL loaded (length: {len(GOOGLE_CHAT_WEBHOOK_URL)} characters)")
+else:
+    print("[Google Chat] WARNING: GOOGLE_CHAT_WEBHOOK_URL not set!")
+    print(f"[Google Chat] Checked .env file at: {ENV_FILE}")
+    print(f"[Google Chat] .env file exists: {os.path.exists(ENV_FILE)}")
 
 
 def format_model_10_alert_message(results: List[Dict]) -> Dict:
@@ -22,8 +95,10 @@ def format_model_10_alert_message(results: List[Dict]) -> Dict:
     - Absolute number of deaths this month
     """
     if not results:
+        today = datetime.now()
+        current_period = today.strftime("%B %Y")
         return {
-            "text": "✅ *Quality Alert - Model 10*\n\nNo hospitals triggered alerts this week."
+            "text": f"✅ *Quality Alert - Model 10*\n*Period:* {current_period}\n*Alert Date:* {today.strftime('%Y-%m-%d %H:%M:%S')}\n\nNo hospital has a mortality rate that meets the set threshold."
         }
     
     today = datetime.now()
@@ -79,9 +154,11 @@ def format_generic_alert_message(model_id: str, results: List[Dict]) -> Dict:
     Format alert message for any model.
     """
     if not results:
+        today = datetime.now()
+        current_period = today.strftime("%B %Y")
         model_name = model_id.replace('model', 'Model ')
         return {
-            "text": f"✅ *Quality Alert - {model_name}*\n\nNo hospitals triggered alerts."
+            "text": f"✅ *Quality Alert - {model_name}*\n*Period:* {current_period}\n*Alert Date:* {today.strftime('%Y-%m-%d %H:%M:%S')}\n\nNo hospital has a mortality rate that meets the set threshold."
         }
     
     today = datetime.now()
@@ -143,13 +220,22 @@ def send_google_chat_message(message: Dict, webhook_url: Optional[str] = None) -
     
     Args:
         message: Dictionary with message content (should have 'text' key)
-        webhook_url: Optional webhook URL (defaults to GOOGLE_CHAT_WEBHOOK_URL)
+        webhook_url: Optional webhook URL (defaults to GOOGLE_CHAT_WEBHOOK_URL from environment)
     
     Returns:
         True if successful, False otherwise
     """
     if webhook_url is None:
-        webhook_url = GOOGLE_CHAT_WEBHOOK_URL
+        # Reload webhook URL in case .env was loaded after module import
+        webhook_url = get_webhook_url()
+    
+    if not webhook_url:
+        error_msg = "Google Chat webhook URL not configured. Please set GOOGLE_CHAT_WEBHOOK_URL environment variable in .env file."
+        print(f"[Google Chat] Error: {error_msg}")
+        env_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+        print(f"[Google Chat] Expected .env file at: {env_file_path}")
+        print(f"[Google Chat] .env file exists: {os.path.exists(env_file_path)}")
+        raise ValueError(error_msg)
     
     try:
         response = requests.post(
@@ -181,8 +267,9 @@ def send_model_alert(model_id: str = "model10", webhook_url: Optional[str] = Non
     """
     try:
         print(f"[Google Chat] Calculating results for {model_id}...")
-        results = calculate_model_results(model_id)
-        print(f"[Google Chat] Found {len(results)} hospitals with alerts")
+        # Apply death increase filter for Google Chat alerts (only send if increase >= 2)
+        results = calculate_model_results(model_id, apply_death_increase_filter=True)
+        print(f"[Google Chat] Found {len(results)} hospitals with alerts (after applying death increase filter)")
         
         # Format message based on model
         if model_id == "model10":
@@ -190,19 +277,44 @@ def send_model_alert(model_id: str = "model10", webhook_url: Optional[str] = Non
         else:
             message = format_generic_alert_message(model_id, results)
         
-        # Send message
-        success = send_google_chat_message(message, webhook_url)
+        # Send message (always send, even if no hospitals meet criteria)
+        try:
+            success = send_google_chat_message(message, webhook_url)
+        except ValueError as ve:
+            # Webhook URL not configured
+            error_msg = str(ve)
+            print(f"[Google Chat] ValueError when sending message: {error_msg}")
+            return {
+                "success": False,
+                "message": error_msg,
+                "hospitals_count": len(results)
+            }
+        except Exception as send_error:
+            # Other errors when sending
+            error_msg = f"Error sending message to Google Chat: {str(send_error)}"
+            print(f"[Google Chat] Exception when sending message: {error_msg}")
+            import traceback
+            traceback.print_exc()
+            return {
+                "success": False,
+                "message": error_msg,
+                "hospitals_count": len(results)
+            }
         
         if success:
+            if len(results) == 0:
+                message_text = f"Alert sent successfully for {model_id}. No hospitals meet the threshold criteria."
+            else:
+                message_text = f"Alert sent successfully for {model_id}. {len(results)} hospitals with alerts."
             return {
                 "success": True,
-                "message": f"Alert sent successfully for {model_id}. {len(results)} hospitals with alerts.",
+                "message": message_text,
                 "hospitals_count": len(results)
             }
         else:
             return {
                 "success": False,
-                "message": f"Failed to send alert for {model_id}.",
+                "message": f"Failed to send alert for {model_id}. Check server logs for details.",
                 "hospitals_count": len(results)
             }
     

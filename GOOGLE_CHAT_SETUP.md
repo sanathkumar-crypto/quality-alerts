@@ -22,10 +22,31 @@ The `requests` library is required for sending messages to Google Chat.
 
 ### 2. Google Chat Webhook Configuration
 
-The webhook URL is already configured in `google_chat.py`:
-- Webhook URL: `https://chat.googleapis.com/v1/spaces/AAQAqw1Odpo/messages?key=...`
+**IMPORTANT**: The webhook URL must be configured using an environment variable for security.
 
-If you need to change the webhook URL, edit the `GOOGLE_CHAT_WEBHOOK_URL` constant in `google_chat.py`.
+#### Option A: Using a .env file (Recommended)
+
+1. Copy the example environment file:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Edit `.env` and add your Google Chat webhook URL:
+   ```
+   GOOGLE_CHAT_WEBHOOK_URL=https://chat.googleapis.com/v1/spaces/AAQAqw1Odpo/messages?key=YOUR_API_KEY&token=YOUR_TOKEN
+   ```
+
+3. Replace `YOUR_API_KEY` and `YOUR_TOKEN` with your actual webhook credentials.
+
+#### Option B: Using Environment Variable
+
+Set the environment variable directly:
+
+```bash
+export GOOGLE_CHAT_WEBHOOK_URL="https://chat.googleapis.com/v1/spaces/AAQAqw1Odpo/messages?key=YOUR_API_KEY&token=YOUR_TOKEN"
+```
+
+**Note**: The webhook URL contains sensitive credentials and should never be committed to version control. The `.env` file is already in `.gitignore`.
 
 ### 3. Set Up Scheduled Alerts (Monday 9am)
 
@@ -101,10 +122,13 @@ The alert messages include:
 
 ### Alerts Not Sending
 
-1. **Check webhook URL**: Verify the webhook URL in `google_chat.py` is correct
+1. **Check webhook URL**: Verify the `GOOGLE_CHAT_WEBHOOK_URL` environment variable is set correctly
+   - Check if `.env` file exists and contains the webhook URL
+   - Or verify the environment variable: `echo $GOOGLE_CHAT_WEBHOOK_URL`
 2. **Check logs**: Review `logs/scheduled_alert.log` for errors
 3. **Test manually**: Run `python send_scheduled_alert.py` to test
 4. **Check cron**: Verify cron job is set up: `crontab -l`
+5. **Verify environment variable in cron**: If using cron, ensure the environment variable is available to the cron job (consider using a wrapper script that sources the .env file)
 
 ### Cron Job Not Running
 

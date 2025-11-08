@@ -1,8 +1,8 @@
 # Mortality Analysis Report
 
 **Analysis Period:** May - October 2025  
-**Model:** Model 10 Analysis  
-**Generated:** November 07, 2025 at 09:44 PM
+**Analysis Criteria:** Death count changes (September to October 2025)  
+**Generated:** November 08, 2025 at 07:38 PM
 
 > **Note:** Interactive line charts are available in the HTML version of this report (`mortality_analysis_2025.html`).
 
@@ -10,83 +10,93 @@
 
 ## Top 5 Hospitals - Worsened Mortality
 
-Hospitals where October 2025 mortality rate is higher than the highest mortality rate in May-September 2025.
+Hospitals where October 2025 deaths increased by 2 or more compared to September 2025 (October deaths >= September deaths + 2).
 
 | Hospital | May | June | July | August | September | October |
 |----------|-----|------|------|--------|-----------|----------|
-| **Shree Narsinh - Balod** | 6.25% | 0.00% | 13.33% | 16.67% | 9.09% | 50.00% |
-| **CentraCare - Belagavi** | 0.00% | 11.11% | 11.43% | 0.00% | 0.00% | 33.33% |
-| **Sree Ayyappa - Kozhencherry** | 33.33% | 0.00% | 6.25% | 0.00% | 0.00% | 50.00% |
-| **Mundhra Hospital - Chaibasa** | 25.00% | 20.00% | 23.08% | 0.00% | 28.57% | 42.86% |
-| **Jai Patai Mata Hospital - Patewa** | 0.00% | 0.00% | 0.00% | 0.00% | 0.00% | 12.50% |
+| **Shree Narsinh - Balod** | 6.25% (1) | 0.00% (0) | 13.33% (2) | 16.67% (2) | 9.09% (2) | 50.00% (7) |
+| **Sunrise Varanasi** | 7.27% (4) | 8.62% (5) | 7.81% (5) | 12.50% (11) | 8.33% (7) | 14.67% (11) |
+| **Cachar** | 4.81% (5) | 8.04% (9) | 1.69% (2) | 5.62% (5) | 2.48% (3) | 5.77% (6) |
+| **Sanjeevani Samastipur** | 11.11% (1) | 14.29% (1) | 27.78% (5) | 5.26% (1) | 0.00% (0) | 15.79% (3) |
+| **CCH Davangere** | 9.68% (3) | 16.67% (6) | 15.38% (4) | 3.57% (1) | 6.06% (2) | 11.76% (4) |
 
 ### Details
 
 1. **Shree Narsinh - Balod**
-   - October 2025: 50.00%
-   - Highest previous (May-September): 16.67% (August)
-   - Change: +33.33 percentage points
+   - September 2025: 9.09% (2 deaths)
+   - October 2025: 50.00% (7 deaths)
+   - Death change: +5 deaths
+   - Rate change: +40.91 percentage points
 
-2. **CentraCare - Belagavi**
-   - October 2025: 33.33%
-   - Highest previous (May-September): 11.43% (July)
-   - Change: +21.90 percentage points
+2. **Sunrise Varanasi**
+   - September 2025: 8.33% (7 deaths)
+   - October 2025: 14.67% (11 deaths)
+   - Death change: +4 deaths
+   - Rate change: +6.34 percentage points
 
-3. **Sree Ayyappa - Kozhencherry**
-   - October 2025: 50.00%
-   - Highest previous (May-September): 33.33% (May)
-   - Change: +16.67 percentage points
+3. **Cachar**
+   - September 2025: 2.48% (3 deaths)
+   - October 2025: 5.77% (6 deaths)
+   - Death change: +3 deaths
+   - Rate change: +3.29 percentage points
 
-4. **Mundhra Hospital - Chaibasa**
-   - October 2025: 42.86%
-   - Highest previous (May-September): 28.57% (September)
-   - Change: +14.29 percentage points
+4. **Sanjeevani Samastipur**
+   - September 2025: 0.00% (0 deaths)
+   - October 2025: 15.79% (3 deaths)
+   - Death change: +3 deaths
+   - Rate change: +15.79 percentage points
 
-5. **Jai Patai Mata Hospital - Patewa**
-   - October 2025: 12.50%
-   - Highest previous (May-September): 0.00% (May)
-   - Change: +12.50 percentage points
+5. **CCH Davangere**
+   - September 2025: 6.06% (2 deaths)
+   - October 2025: 11.76% (4 deaths)
+   - Death change: +2 deaths
+   - Rate change: +5.70 percentage points
 
 ---
 
 ## Top 5 Hospitals - Improved Mortality
 
-Hospitals where October 2025 mortality rate is lower than the lowest mortality rate in May-September 2025.
+Hospitals where October 2025 deaths decreased by 2 or more compared to September 2025 (October deaths <= September deaths - 2).
 
 | Hospital | May | June | July | August | September | October |
 |----------|-----|------|------|--------|-----------|----------|
-| **Gandhi Nursing Home - Rajnandgaon** | 15.38% | 20.00% | 33.33% | 33.33% | 42.86% | 0.00% |
-| **Prashant** | 8.85% | 7.92% | 5.83% | 4.20% | 6.03% | 2.67% |
-| **Cytecare** | 12.77% | 8.33% | 13.51% | 16.67% | 10.81% | 6.82% |
-| **Parameshwari Devi - New Delhi** | 8.33% | 50.00% | 0.00% | 0.00% | 50.00% | 0.00% |
-| **Life Line Daltonganj** | 7.14% | 14.29% | 25.00% | 15.38% | 0.00% | 0.00% |
+| **MRNH** | 14.71% (5) | 0.00% (0) | 5.88% (2) | 6.38% (3) | 12.50% (6) | 2.56% (1) |
+| **Prashant** | 8.85% (10) | 7.92% (8) | 5.83% (7) | 4.20% (5) | 6.03% (7) | 2.67% (2) |
+| **Udayananda Hospital - Nandyal** | 4.09% (15) | 2.86% (11) | 1.39% (6) | 3.50% (15) | 2.42% (11) | 1.52% (6) |
+| **Dr. Prem Hospital** | 7.25% (10) | 10.42% (15) | 6.92% (9) | 11.85% (16) | 11.90% (20) | 10.81% (16) |
+| **RN Pandey - Gonda** | 8.22% (6) | 15.38% (10) | 21.88% (14) | 25.33% (19) | 21.52% (17) | 24.53% (13) |
 
 ### Details
 
-1. **Gandhi Nursing Home - Rajnandgaon**
-   - October 2025: 0.00%
-   - Lowest previous (May-September): 15.38% (May)
-   - Change: -15.38 percentage points
+1. **MRNH**
+   - September 2025: 12.50% (6 deaths)
+   - October 2025: 2.56% (1 deaths)
+   - Death change: -5 deaths
+   - Rate change: -9.94 percentage points
 
 2. **Prashant**
-   - October 2025: 2.67%
-   - Lowest previous (May-September): 4.20% (August)
-   - Change: -1.53 percentage points
+   - September 2025: 6.03% (7 deaths)
+   - October 2025: 2.67% (2 deaths)
+   - Death change: -5 deaths
+   - Rate change: -3.36 percentage points
 
-3. **Cytecare**
-   - October 2025: 6.82%
-   - Lowest previous (May-September): 8.33% (June)
-   - Change: -1.51 percentage points
+3. **Udayananda Hospital - Nandyal**
+   - September 2025: 2.42% (11 deaths)
+   - October 2025: 1.52% (6 deaths)
+   - Death change: -5 deaths
+   - Rate change: -0.90 percentage points
 
-4. **Parameshwari Devi - New Delhi**
-   - October 2025: 0.00%
-   - Average previous (May-September): 21.67%
-   - Change: -21.67 percentage points
+4. **Dr. Prem Hospital**
+   - September 2025: 11.90% (20 deaths)
+   - October 2025: 10.81% (16 deaths)
+   - Death change: -4 deaths
+   - Rate change: -1.09 percentage points
 
-5. **Life Line Daltonganj**
-   - October 2025: 0.00%
-   - Average previous (May-September): 12.36%
-   - Change: -12.36 percentage points
+5. **RN Pandey - Gonda**
+   - September 2025: 21.52% (17 deaths)
+   - October 2025: 24.53% (13 deaths)
+   - Death change: -4 deaths
+   - Rate change: +3.01 percentage points
 
 ---
 

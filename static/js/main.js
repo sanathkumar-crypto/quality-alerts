@@ -938,6 +938,12 @@ async function sendAlertToGoogleChat() {
             })
         });
         
+        // Check if response is ok
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: `HTTP ${response.status}: ${response.statusText}` }));
+            throw new Error(errorData.error || errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+        }
+        
         const result = await response.json();
         
         if (result.success) {
@@ -947,7 +953,14 @@ async function sendAlertToGoogleChat() {
         }
     } catch (error) {
         console.error('[Quality Alerts] Error sending alert:', error);
-        alert(`❌ Error sending alert: ${error.message}`);
+        let errorMessage = error.message || 'Unknown error occurred';
+        
+        // Try to get more details from the error
+        if (error instanceof TypeError && error.message.includes('fetch')) {
+            errorMessage = 'Network error: Could not connect to server. Please check if the server is running.';
+        }
+        
+        alert(`❌ Error sending alert:\n\n${errorMessage}\n\nPlease check the server console for more details.`);
     } finally {
         // Re-enable button
         sendBtn.disabled = false;

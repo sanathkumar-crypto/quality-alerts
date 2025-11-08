@@ -30,10 +30,14 @@ except ImportError:
 except Exception as e:
     print(f"[Google Chat] Error loading .env file: {e}")
 
-def get_webhook_url() -> str:
+def get_webhook_urls() -> List[str]:
     """
-    Get the Google Chat webhook URL from environment variable.
-    This function ensures the .env file is loaded before reading the value.
+    Get all Google Chat webhook URLs from environment variables.
+    Supports:
+    - GOOGLE_CHAT_WEBHOOK_URL: Single URL or comma-separated URLs
+    - GOOGLE_CHAT_WEBHOOK_URLS: Comma-separated list of additional URLs (optional)
+    
+    Returns a list of all unique webhook URLs.
     """
     # Always try to load .env file first to ensure it's loaded
     try:
@@ -51,12 +55,36 @@ def get_webhook_url() -> str:
     except Exception as e:
         print(f"[Google Chat] Error loading .env: {e}")
     
-    webhook_url = os.getenv("GOOGLE_CHAT_WEBHOOK_URL", "")
+    webhook_urls = []
     
-    if webhook_url:
-        print(f"[Google Chat] Webhook URL found (length: {len(webhook_url)})")
+    # Get primary webhook URL(s) - can be single URL or comma-separated
+    primary_url = os.getenv("GOOGLE_CHAT_WEBHOOK_URL", "")
+    if primary_url:
+        # Split by comma and strip whitespace
+        urls = [url.strip() for url in primary_url.split(',') if url.strip()]
+        webhook_urls.extend(urls)
+        print(f"[Google Chat] Found {len(urls)} webhook URL(s) in GOOGLE_CHAT_WEBHOOK_URL")
+    
+    # Get additional webhook URLs (optional)
+    additional_urls = os.getenv("GOOGLE_CHAT_WEBHOOK_URLS", "")
+    if additional_urls:
+        # Split by comma and strip whitespace
+        urls = [url.strip() for url in additional_urls.split(',') if url.strip()]
+        webhook_urls.extend(urls)
+        print(f"[Google Chat] Found {len(urls)} additional webhook URL(s) in GOOGLE_CHAT_WEBHOOK_URLS")
+    
+    # Remove duplicates while preserving order
+    unique_urls = []
+    seen = set()
+    for url in webhook_urls:
+        if url and url not in seen:
+            unique_urls.append(url)
+            seen.add(url)
+    
+    if unique_urls:
+        print(f"[Google Chat] Total unique webhook URLs: {len(unique_urls)}")
     else:
-        print("[Google Chat] WARNING: GOOGLE_CHAT_WEBHOOK_URL not found in environment!")
+        print("[Google Chat] WARNING: No webhook URLs found in environment!")
         env_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
         print(f"[Google Chat] .env file path: {env_file_path}")
         print(f"[Google Chat] .env file exists: {os.path.exists(env_file_path)}")
@@ -72,16 +100,19 @@ def get_webhook_url() -> str:
             except Exception as e:
                 print(f"[Google Chat] Error reading .env file: {e}")
     
-    return webhook_url
+    return unique_urls
 
-# Initialize webhook URL at module load (but can be reloaded if needed)
-GOOGLE_CHAT_WEBHOOK_URL = get_webhook_url()
+# Initialize webhook URLs at module load (but can be reloaded if needed)
+GOOGLE_CHAT_WEBHOOK_URLS = get_webhook_urls()
 
-# Debug: Check if webhook URL is loaded (don't print the full URL for security)
-if GOOGLE_CHAT_WEBHOOK_URL:
-    print(f"[Google Chat] Webhook URL loaded (length: {len(GOOGLE_CHAT_WEBHOOK_URL)} characters)")
+# For backward compatibility, keep the first URL as GOOGLE_CHAT_WEBHOOK_URL
+GOOGLE_CHAT_WEBHOOK_URL = GOOGLE_CHAT_WEBHOOK_URLS[0] if GOOGLE_CHAT_WEBHOOK_URLS else ""
+
+# Debug: Check if webhook URLs are loaded (don't print the full URLs for security)
+if GOOGLE_CHAT_WEBHOOK_URLS:
+    print(f"[Google Chat] {len(GOOGLE_CHAT_WEBHOOK_URLS)} webhook URL(s) loaded")
 else:
-    print("[Google Chat] WARNING: GOOGLE_CHAT_WEBHOOK_URL not set!")
+    print("[Google Chat] WARNING: No webhook URLs configured!")
     print(f"[Google Chat] Checked .env file at: {ENV_FILE}")
     print(f"[Google Chat] .env file exists: {os.path.exists(ENV_FILE)}")
 
@@ -214,22 +245,22 @@ def format_generic_alert_message(model_id: str, results: List[Dict]) -> Dict:
     }
 
 
-def send_google_chat_message(message: Dict, webhook_url: Optional[str] = None) -> bool:
+def send_google_chat_message(message: Dict, webhook_urls: Optional[List[str]] = None) -> Dict[str, bool]:
     """
-    Send a message to Google Chat using the webhook URL.
+    Send a message to Google Chat using webhook URL(s).
     
     Args:
         message: Dictionary with message content (should have 'text' key)
-        webhook_url: Optional webhook URL (defaults to GOOGLE_CHAT_WEBHOOK_URL from environment)
+        webhook_urls: Optional list of webhook URLs (defaults to GOOGLE_CHAT_WEBHOOK_URLS from environment)
     
     Returns:
-        True if successful, False otherwise
+        Dictionary mapping webhook URL (or index) to success status (True/False)
     """
-    if webhook_url is None:
-        # Reload webhook URL in case .env was loaded after module import
-        webhook_url = get_webhook_url()
+    if webhook_urls is None:
+        # Reload webhook URLs in case .env was loaded after module import
+        webhook_urls = get_webhook_urls()
     
-    if not webhook_url:
+    if not webhook_urls:
         error_msg = "Google Chat webhook URL not configured. Please set GOOGLE_CHAT_WEBHOOK_URL environment variable in .env file."
         print(f"[Google Chat] Error: {error_msg}")
         env_file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
@@ -237,21 +268,32 @@ def send_google_chat_message(message: Dict, webhook_url: Optional[str] = None) -
         print(f"[Google Chat] .env file exists: {os.path.exists(env_file_path)}")
         raise ValueError(error_msg)
     
-    try:
-        response = requests.post(
-            webhook_url,
-            json=message,
-            headers={'Content-Type': 'application/json'},
-            timeout=30
-        )
-        response.raise_for_status()
-        print(f"[Google Chat] Message sent successfully: {response.status_code}")
-        return True
-    except requests.exceptions.RequestException as e:
-        print(f"[Google Chat] Error sending message: {e}")
-        if hasattr(e, 'response') and e.response is not None:
-            print(f"[Google Chat] Response: {e.response.text}")
-        return False
+    results = {}
+    success_count = 0
+    
+    for idx, webhook_url in enumerate(webhook_urls, 1):
+        try:
+            print(f"[Google Chat] Sending message to webhook {idx}/{len(webhook_urls)}...")
+            response = requests.post(
+                webhook_url,
+                json=message,
+                headers={'Content-Type': 'application/json'},
+                timeout=30
+            )
+            response.raise_for_status()
+            print(f"[Google Chat] ✅ Message sent successfully to webhook {idx}: {response.status_code}")
+            results[f"webhook_{idx}"] = True
+            success_count += 1
+        except requests.exceptions.RequestException as e:
+            print(f"[Google Chat] ❌ Error sending message to webhook {idx}: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"[Google Chat] Response: {e.response.text}")
+            results[f"webhook_{idx}"] = False
+    
+    print(f"[Google Chat] Sent to {success_count}/{len(webhook_urls)} webhook(s) successfully")
+    
+    # Return True if at least one succeeded (for backward compatibility)
+    return results
 
 
 def send_model_alert(model_id: str = "model10", webhook_url: Optional[str] = None) -> Dict:
@@ -279,7 +321,7 @@ def send_model_alert(model_id: str = "model10", webhook_url: Optional[str] = Non
         
         # Send message (always send, even if no hospitals meet criteria)
         try:
-            success = send_google_chat_message(message, webhook_url)
+            send_results = send_google_chat_message(message)
         except ValueError as ve:
             # Webhook URL not configured
             error_msg = str(ve)
@@ -301,21 +343,29 @@ def send_model_alert(model_id: str = "model10", webhook_url: Optional[str] = Non
                 "hospitals_count": len(results)
             }
         
-        if success:
+        # Check if at least one webhook succeeded
+        success_count = sum(1 for success in send_results.values() if success)
+        total_webhooks = len(send_results)
+        
+        if success_count > 0:
             if len(results) == 0:
-                message_text = f"Alert sent successfully for {model_id}. No hospitals meet the threshold criteria."
+                message_text = f"Alert sent successfully for {model_id} to {success_count}/{total_webhooks} chat space(s). No hospitals meet the threshold criteria."
             else:
-                message_text = f"Alert sent successfully for {model_id}. {len(results)} hospitals with alerts."
+                message_text = f"Alert sent successfully for {model_id} to {success_count}/{total_webhooks} chat space(s). {len(results)} hospitals with alerts."
             return {
                 "success": True,
                 "message": message_text,
-                "hospitals_count": len(results)
+                "hospitals_count": len(results),
+                "webhooks_sent": success_count,
+                "webhooks_total": total_webhooks
             }
         else:
             return {
                 "success": False,
-                "message": f"Failed to send alert for {model_id}. Check server logs for details.",
-                "hospitals_count": len(results)
+                "message": f"Failed to send alert for {model_id} to any chat space. Check server logs for details.",
+                "hospitals_count": len(results),
+                "webhooks_sent": 0,
+                "webhooks_total": total_webhooks
             }
     
     except Exception as e:

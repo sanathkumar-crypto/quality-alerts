@@ -45,11 +45,14 @@ def get_expected_death_percentage(hospital_name: str) -> Optional[float]:
 
 def calculate_smr(monthly_data: pd.DataFrame, expected_pct: float) -> pd.DataFrame:
     """Calculate Standardized Mortality Ratio (SMR) for monthly data.
-    SMR = (Mortality Rate / Expected Death Percentage) for each month.
+    SMR = (Observed Rate / Expected Rate)
+    Note: mortality_rate is a percentage (0-100), expected_pct is a decimal (0-1).
+    So we normalize: SMR = (mortality_rate / 100) / expected_pct
     """
     df = monthly_data.copy()
     if expected_pct and expected_pct > 0:
-        df['smr'] = df['mortality_rate'] / expected_pct
+        # Convert mortality_rate from percentage to decimal, then divide by expected_pct
+        df['smr'] = (df['mortality_rate'] / 100) / expected_pct
     else:
         df['smr'] = None
     return df
@@ -454,7 +457,9 @@ def calculate_model_results(model_id: str, apply_death_increase_filter: bool = F
                 expected_pct = expected_death_pct_dict.get(hospital)
                 if expected_pct and expected_pct > 0:
                     # Calculate SMR for current month
-                    smr_value = current_mortality_rate / expected_pct
+                    # Note: current_mortality_rate is a percentage (0-100), expected_pct is a decimal (0-1)
+                    # So we normalize: SMR = (mortality_rate / 100) / expected_pct
+                    smr_value = (current_mortality_rate / 100) / expected_pct
                     # Calculate SMR for recent months too
                     recent_smr_df = calculate_smr(recent_data.copy(), expected_pct)
                     if 'smr' in recent_smr_df.columns:

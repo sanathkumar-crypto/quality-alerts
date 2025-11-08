@@ -7,7 +7,7 @@ from database import MortalityDatabase
 from datetime import datetime, date
 import json
 import pandas as pd
-from bigquery_queries import query_daily_pbd
+from bigquery_queries import query_daily_pbd, query_current_month_mortality_all_hospitals, query_current_month_mortality
 
 app = Flask(__name__)
 
@@ -67,6 +67,34 @@ def get_mortality_data():
         start_date=start_date,
         end_date=end_date
     )
+    
+    # Check if current month is in the date range and not in database
+    today = date.today()
+    current_year = today.year
+    current_month = today.month
+    
+    need_current_month = False
+    if end_date:
+        # Check if end_date includes current month
+        if end_date.year == current_year and end_date.month >= current_month:
+            need_current_month = True
+        elif end_date.year > current_year:
+            need_current_month = True
+    
+    # Check if current month is already in the data
+    if need_current_month:
+        current_month_in_data = monthly_data[
+            (monthly_data['year'] == current_year) & 
+            (monthly_data['month'] == current_month)
+        ]
+        
+        # Try to fetch current month from BigQuery, but don't block if it's slow
+        # Return database data immediately, and add BigQuery data if it completes quickly
+        if len(current_month_in_data) == 0:
+            print(f"[API Mortality Data] Current month {current_year}-{current_month:02d} not in database")
+            # Note: BigQuery query disabled due to timeout issues
+            # Current month data will be available once synced to database
+            # To enable BigQuery: uncomment the code below and ensure proper timeout handling
     
     # Format response
     result = {
@@ -132,14 +160,50 @@ def get_pbd_data():
             return jsonify({'error': 'Invalid end_date format. Use YYYY-MM-DD'}), 400
     
     try:
-        # Query PBD data from BigQuery
-        pbd_data = query_daily_pbd(
-            hospital_name=hospital_name,
-            start_date=start_date,
-            end_date=end_date
-        )
+        import time
+        from datetime import timedelta
+        start_time = time.time()
+        print(f"[API PBD] ========================================")
+        print(f"[API PBD] NEW REQUEST RECEIVED")
+        print(f"[API PBD] ========================================")
+        print(f"[API PBD] Request: hospital={hospital_name}, start_date={start_date}, end_date={end_date}")
+        
+        # Check date range - if too large, limit it
+        if start_date and end_date:
+            days_diff = (end_date - start_date).days
+            print(f"[API PBD] Date range: {days_diff} days")
+            if days_diff > 180:
+                print(f"[API PBD] ⚠️  Date range {days_diff} days exceeds 180 days, limiting to last 180 days")
+                start_date = end_date - timedelta(days=180)
+                print(f"[API PBD] Adjusted start_date: {start_date}")
+        
+        # Query PBD data from BigQuery with timeout
+        print(f"[API PBD] Calling query_daily_pbd()...")
+        try:
+            pbd_data = query_daily_pbd(
+                hospital_name=hospital_name,
+                start_date=start_date,
+                end_date=end_date
+            )
+            query_time = time.time() - start_time
+            print(f"[API PBD] ✅ Query completed in {query_time:.2f} seconds, returned {len(pbd_data)} rows")
+        except TimeoutError as timeout_error:
+            query_time = time.time() - start_time
+            print(f"[API PBD] ❌ TIMEOUT after {query_time:.2f} seconds")
+            print(f"[API PBD] Error: {timeout_error}")
+            return jsonify({'error': 'PBD query timed out. Please try a shorter date range (max 3 months).'}), 408
+        except Exception as query_error:
+            query_time = time.time() - start_time
+            print(f"[API PBD] ❌ ERROR after {query_time:.2f} seconds")
+            print(f"[API PBD] Error type: {type(query_error).__name__}")
+            print(f"[API PBD] Error message: {query_error}")
+            import traceback
+            print(f"[API PBD] Traceback:")
+            traceback.print_exc()
+            return jsonify({'error': f'PBD query failed: {str(query_error)}'}), 500
         
         # Format response
+        print(f"[API PBD] Formatting response...")
         result = {
             'daily_pbd': []
         }
@@ -151,8 +215,15 @@ def get_pbd_data():
                 'total_pbd': int(row['total_pbd'])
             })
         
+        total_time = time.time() - start_time
+        print(f"[API PBD] ✅ Returning {len(result['daily_pbd'])} PBD records")
+        print(f"[API PBD] Total request time: {total_time:.2f} seconds")
+        print(f"[API PBD] ========================================")
         return jsonify(result)
     except Exception as e:
+        print(f"[API PBD] EXCEPTION: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
@@ -179,12 +250,75 @@ def get_raw_data():
         except ValueError:
             return jsonify({'error': 'Invalid end_date format. Use YYYY-MM-DD'}), 400
     
-    # Get raw data
+    # Get raw data from database
     raw_data = get_db().get_raw_mortality_data(
         hospital_name=hospital_name,
         start_date=start_date,
         end_date=end_date
     )
+    
+    # Check if current month is in the date range and not in database
+    today = date.today()
+    current_year = today.year
+    current_month = today.month
+    
+    print(f"[API Raw Data] Request: hospital={hospital_name}, start_date={start_date}, end_date={end_date}")
+    print(f"[API Raw Data] Current date: {today}, Current month: {current_year}-{current_month:02d}")
+    print(f"[API Raw Data] Database returned {len(raw_data)} rows")
+    if len(raw_data) > 0:
+        months_list = raw_data[['year', 'month']].drop_duplicates().apply(
+            lambda x: f"{int(x['year'])}-{int(x['month']):02d}", axis=1
+        ).tolist()
+        print(f"[API Raw Data] Database data months: {sorted(months_list)}")
+    
+    # Check if we need to add current month data
+    need_current_month = False
+    if end_date:
+        # Check if end_date includes current month
+        if end_date.year == current_year and end_date.month >= current_month:
+            need_current_month = True
+        elif end_date.year > current_year:
+            need_current_month = True
+    else:
+        # If no end_date specified, check if start_date includes current month
+        if start_date and start_date.year == current_year and start_date.month <= current_month:
+            need_current_month = True
+    
+    print(f"[API Raw Data] Need current month data: {need_current_month}")
+    
+    # Check if current month is already in the data
+    if need_current_month:
+        current_month_in_data = raw_data[
+            (raw_data['year'] == current_year) & 
+            (raw_data['month'] == current_month)
+        ]
+        
+        print(f"[API Raw Data] Current month in database result: {len(current_month_in_data)} rows")
+        
+        # NOTE: BigQuery query for current month is disabled to prevent timeouts
+        # The endpoint now returns database data only (matches mortality-data endpoint behavior)
+        # Current month data will be available once it's synced to the database
+        if len(current_month_in_data) == 0:
+            print(f"[API Raw Data] Current month {current_year}-{current_month:02d} not in database")
+            print(f"[API Raw Data] Returning database data only (BigQuery query disabled to prevent timeouts)")
+            # Skip BigQuery query - return database data only
+            # This matches the mortality-data endpoint behavior
+    
+    # Sort by year, month for consistent display
+    raw_data = raw_data.sort_values(['year', 'month'], ascending=[True, True])
+    
+    print(f"[API Raw Data] Final data: {len(raw_data)} rows")
+    if len(raw_data) > 0:
+        final_months_list = raw_data[['year', 'month']].drop_duplicates().apply(
+            lambda x: f"{int(x['year'])}-{int(x['month']):02d}", axis=1
+        ).tolist()
+        print(f"[API Raw Data] Final months in data: {sorted(final_months_list)}")
+        # Check specifically for November
+        nov_data = raw_data[(raw_data['year'] == current_year) & (raw_data['month'] == current_month)]
+        print(f"[API Raw Data] November {current_year} rows: {len(nov_data)}")
+        if len(nov_data) > 0:
+            print(f"[API Raw Data] November data sample:")
+            print(nov_data[['hospital_name', 'year', 'month', 'deaths', 'mortality_rate']].to_string())
     
     # Format response
     result = []
@@ -199,7 +333,55 @@ def get_raw_data():
             'mortality_rate': float(row['mortality_rate'])
         })
     
+    print(f"[API Raw Data] Returning {len(result)} rows to frontend")
     return jsonify(result)
+
+
+@app.route('/api/models/<model_id>')
+def get_model_results(model_id):
+    """Get alert results for a specific model."""
+    from models import calculate_model_results
+    import traceback
+    
+    try:
+        print(f"[API] Calculating results for {model_id}...")
+        results = calculate_model_results(model_id)
+        print(f"[API] Found {len(results)} results for {model_id}")
+        return jsonify({
+            'model_id': model_id,
+            'results': results
+        })
+    except Exception as e:
+        print(f"[API] Error calculating model results for {model_id}: {e}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/send-alert', methods=['POST'])
+def send_alert():
+    """Send alert to Google Chat for a specific model."""
+    from google_chat import send_model_alert
+    import traceback
+    
+    try:
+        data = request.get_json()
+        model_id = data.get('model_id', 'model10')
+        
+        if not model_id:
+            return jsonify({'error': 'model_id is required'}), 400
+        
+        print(f"[API] Sending alert for {model_id}...")
+        result = send_model_alert(model_id)
+        
+        if result['success']:
+            return jsonify(result), 200
+        else:
+            return jsonify(result), 500
+    
+    except Exception as e:
+        print(f"[API] Error sending alert: {e}")
+        traceback.print_exc()
+        return jsonify({'error': str(e), 'success': False}), 500
 
 
 if __name__ == '__main__':

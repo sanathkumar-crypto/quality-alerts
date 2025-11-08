@@ -239,6 +239,165 @@ header h1 {
     opacity: 0.6;
 }
 
+/* Tab Navigation */
+.tab-navigation {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 30px;
+    border-bottom: 2px solid #e0e0e0;
+}
+
+.tab-btn {
+    padding: 12px 24px;
+    background: transparent;
+    border: none;
+    border-bottom: 3px solid transparent;
+    font-size: 1em;
+    font-weight: 600;
+    color: #666;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.tab-btn:hover {
+    color: #667eea;
+    background: #f8f9fa;
+}
+
+.tab-btn.active {
+    color: #667eea;
+    border-bottom-color: #667eea;
+    background: #f8f9fa;
+}
+
+.tab-content {
+    display: block;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+/* Models Page Styles */
+.models-container {
+    padding: 20px 0;
+}
+
+.models-header {
+    margin-bottom: 30px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.models-header > div {
+    flex: 1;
+}
+
+.hospital-count {
+    color: #666;
+    font-size: 0.95em;
+    margin-top: 5px;
+    font-weight: 500;
+}
+
+.btn-download-csv {
+    background: #28a745;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.95em;
+    font-weight: 500;
+    transition: background 0.2s;
+    white-space: nowrap;
+}
+
+.btn-download-csv:hover {
+    background: #218838;
+}
+
+.btn-download-csv:active {
+    background: #1e7e34;
+}
+
+.btn-send-alert {
+    background: #007bff;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.95em;
+    font-weight: 500;
+    transition: background 0.2s;
+    white-space: nowrap;
+}
+
+.btn-send-alert:hover {
+    background: #0056b3;
+}
+
+.btn-send-alert:active {
+    background: #004085;
+}
+
+.btn-send-alert:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.model-controls {
+    margin-bottom: 30px;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+.models-results {
+    margin-top: 30px;
+}
+
+.models-results h3 {
+    margin-bottom: 20px;
+    color: #333;
+}
+
+.models-table-container {
+    overflow-x: auto;
+}
+
+.status-badge {
+    padding: 5px 12px;
+    border-radius: 12px;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+.status-badge.alert {
+    background: #fee;
+    color: #c33;
+    border: 1px solid #fcc;
+}
+
+.status-badge.normal {
+    background: #efe;
+    color: #3c3;
+    border: 1px solid #cfc;
+}
+
+.alert-row {
+    background: #fff5f5 !important;
+}
+
+.alert-row:hover {
+    background: #ffe5e5 !important;
+}
+
 @media (max-width: 768px) {
     .controls {
         flex-direction: column;

@@ -6,6 +6,27 @@
     <title>Quality Alerts Dashboard - Mortality Monitoring</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script>
+        // Verify Chart.js loaded
+        window.addEventListener('load', function() {
+            if (typeof Chart === 'undefined') {
+                console.error('[Quality Alerts] Chart.js failed to load from CDN');
+                // Fallback: try loading from alternative CDN
+                const script = document.createElement('script');
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js';
+                script.onerror = function() {
+                    console.error('[Quality Alerts] Chart.js failed to load from both CDNs');
+                    alert('Error: Chart.js library could not be loaded. Some features may not work.');
+                };
+                script.onload = function() {
+                    console.log('[Quality Alerts] Chart.js loaded from fallback CDN');
+                };
+                document.head.appendChild(script);
+            } else {
+                console.log('[Quality Alerts] Chart.js loaded successfully');
+            }
+        });
+    </script>
 </head>
 <body>
     <div class="container">
@@ -14,6 +35,14 @@
             <p class="subtitle">Mortality Rate Monitoring System</p>
         </header>
 
+        <!-- Tab Navigation -->
+        <div class="tab-navigation">
+            <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+            <button class="tab-btn" data-tab="models">Alert Models</button>
+        </div>
+
+        <!-- Dashboard Tab -->
+        <div id="dashboard-tab" class="tab-content active">
         <div class="controls">
             <div class="control-group">
                 <label for="hospital-select">Hospital:</label>
@@ -88,16 +117,109 @@
                 </table>
             </div>
         </div>
+        </div> <!-- End dashboard-tab -->
+
+        <!-- Models Tab -->
+        <div id="models-tab" class="tab-content" style="display: none;">
+            <div class="models-container">
+                <div class="models-header">
+                    <h2>Alert Models</h2>
+                    <p class="subtitle">Select a model to view hospitals that have crossed alert thresholds</p>
+                </div>
+
+                <div class="model-controls">
+                    <div class="control-group">
+                        <label for="model-select">Select Model:</label>
+                        <select id="model-select">
+                            <option value="">Select a model...</option>
+                            <optgroup label="Deaths-Based Models">
+                                <option value="model1">Model 1: Deaths > Highest (Last 3 months)</option>
+                                <option value="model2">Model 2: Deaths > Highest (Last 6 months)</option>
+                                <option value="model3">Model 3: Deaths > Avg + 1SD (Last 3 months)</option>
+                                <option value="model4">Model 4: Deaths > Avg + 1SD (Last 6 months)</option>
+                            </optgroup>
+                            <optgroup label="SMR-Based Models">
+                                <option value="model5">Model 5: SMR > Highest (Last 3 months)</option>
+                                <option value="model6">Model 6: SMR > Highest (Last 6 months)</option>
+                                <option value="model7">Model 7: SMR > Avg + 1SD (Last 3 months)</option>
+                                <option value="model8">Model 8: SMR > Avg + 1SD (Last 6 months)</option>
+                            </optgroup>
+                            <optgroup label="Percentage-Based Models">
+                                <option value="model9">Model 9: Mortality % > Highest (Last 3 months)</option>
+                                <option value="model10">Model 10: Mortality % > Highest (Last 6 months)</option>
+                                <option value="model11">Model 11: Mortality % > Avg + 1SD (Last 3 months)</option>
+                                <option value="model12">Model 12: Mortality % > Avg + 1SD (Last 6 months)</option>
+                            </optgroup>
+                            <optgroup label="Trend Models">
+                                <option value="model13">Model 13: Mortality Rate Increasing (3 Consecutive Months)</option>
+                            </optgroup>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="models-results-container" class="models-results" style="display: none;">
+                    <div class="models-header">
+                        <div>
+                            <h3 id="model-title"></h3>
+                            <p id="hospital-count" class="hospital-count"></p>
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <button id="send-alert-btn" class="btn-send-alert" onclick="sendAlertToGoogleChat()">
+                                📤 Send Alert to Google Chat
+                            </button>
+                            <button id="download-csv-btn" class="btn-download-csv" onclick="downloadModelResultsAsCSV()">
+                                📥 Download as CSV
+                            </button>
+                        </div>
+                    </div>
+                    <div id="models-table-container">
+                        <table id="models-table" class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Hospital</th>
+                                    <th>Current Period</th>
+                                    <th>Deaths</th>
+                                    <th>Mortality Rate (%)</th>
+                                    <th>Value</th>
+                                    <th>Threshold</th>
+                                    <th>Status</th>
+                                    <th>Month 1 (%)</th>
+                                    <th>Month 2 (%)</th>
+                                    <th>Month 3 (%)</th>
+                                    <th>Month 4 (%)</th>
+                                    <th>Month 5 (%)</th>
+                                    <th>Month 6 (%)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="models-table-body">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div> <!-- End models-tab -->
     </div>
 
+    <script src="{{ url_for('static', filename='js/main.js') }}" defer></script>
     <script>
-        // Immediate test - should appear in console immediately
-        console.log('[Quality Alerts] Inline script executed!');
-    </script>
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
-    <script>
-        // Test after main.js loads
-        console.log('[Quality Alerts] After main.js script tag');
+        // Verify Chart.js loaded after page loads
+        window.addEventListener('load', function() {
+            if (typeof Chart === 'undefined') {
+                console.error('[Quality Alerts] Chart.js failed to load from CDN');
+                // Try fallback CDN
+                const script = document.createElement('script');
+                script.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js';
+                script.onload = function() {
+                    console.log('[Quality Alerts] Chart.js loaded from fallback CDN');
+                };
+                script.onerror = function() {
+                    console.error('[Quality Alerts] Chart.js failed to load from both CDNs');
+                };
+                document.head.appendChild(script);
+            } else {
+                console.log('[Quality Alerts] Chart.js loaded successfully');
+            }
+        });
     </script>
 </body>
 </html>

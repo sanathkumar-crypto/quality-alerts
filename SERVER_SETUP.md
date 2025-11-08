@@ -77,3 +77,4 @@ If server won't start:
 2. Check logs: `tail -50 /tmp/flask_server.log`
 3. Verify database exists: `ls -lh quality_alerts.db`
 
+

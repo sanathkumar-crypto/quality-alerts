@@ -4,6 +4,8 @@ console.log('[Quality Alerts] Script loaded!');
 // Global chart instances
 let mortalityChart = null;
 let pbdChart = null;
+let currentModelResults = null;  // Store current model results for CSV download
+let currentModelId = null;  // Store current model ID
 
 // Format date from YYYY-MM-DD to "Month YYYY" format
 function formatDateLabel(dateString) {
@@ -17,13 +19,31 @@ function formatDateLabel(dateString) {
     return `${month} ${year}`;
 }
 
+// Wait for Chart.js to be available
+function waitForChart(callback, maxAttempts = 50) {
+    if (typeof Chart !== 'undefined') {
+        console.log('[Quality Alerts] Chart.js is available');
+        callback();
+    } else if (maxAttempts > 0) {
+        console.log('[Quality Alerts] Waiting for Chart.js... (' + maxAttempts + ' attempts remaining)');
+        setTimeout(() => waitForChart(callback, maxAttempts - 1), 100);
+    } else {
+        console.error('[Quality Alerts] Chart.js did not load after waiting. Some features may not work.');
+        // Still initialize, but charts will fail gracefully
+        callback();
+    }
+}
+
 // Initialize the dashboard
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('[Quality Alerts] DOM loaded, initializing dashboard...');
-    loadHospitals();
-    setDefaultDates();
-    
-    document.getElementById('update-btn').addEventListener('click', updateChart);
+    console.log('[Quality Alerts] DOM loaded, waiting for Chart.js...');
+    waitForChart(function() {
+        console.log('[Quality Alerts] Initializing dashboard...');
+        loadHospitals();
+        setDefaultDates();
+        initTabs();
+        
+        document.getElementById('update-btn').addEventListener('click', updateChart);
     
     // Auto-update when hospital changes - but not on initial load
     // Only trigger when user manually changes after page load
@@ -34,8 +54,47 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         initialLoad = false;
     });
+
+    // Model selection change handler
+    document.getElementById('model-select').addEventListener('change', function() {
+        const model = this.value;
+        if (model) {
+            loadModelResults(model);
+        } else {
+            document.getElementById('models-results-container').style.display = 'none';
+        }
+    });
+    
     console.log('[Quality Alerts] Event listeners attached');
-});
+    }); // End waitForChart callback
+}); // End DOMContentLoaded
+
+// Tab switching functionality
+function initTabs() {
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+    
+    tabButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const targetTab = this.getAttribute('data-tab');
+            
+            // Remove active class from all buttons and contents
+            tabButtons.forEach(btn => btn.classList.remove('active'));
+            tabContents.forEach(content => {
+                content.classList.remove('active');
+                content.style.display = 'none';
+            });
+            
+            // Add active class to clicked button and corresponding content
+            this.classList.add('active');
+            const targetContent = document.getElementById(targetTab + '-tab');
+            if (targetContent) {
+                targetContent.classList.add('active');
+                targetContent.style.display = 'block';
+            }
+        });
+    });
+}
 
 // Load list of hospitals
 async function loadHospitals() {
@@ -113,10 +172,12 @@ async function updateChart() {
     
     try {
         // Load mortality data first (fast, from database) with timeout
+        // Backend timeout is max 120 seconds (query_current_month_mortality_all_hospitals)
+        // Frontend timeout should be 5 seconds more = 125 seconds
         const response = await fetchWithTimeout(
             `/api/mortality-data?hospital_name=${encodeURIComponent(hospital)}&start_date=${startDate}&end_date=${endDate}`,
             {},
-            10000  // 10 second timeout
+            125000  // 125 second timeout (120s backend max + 5s buffer)
         );
         
         if (!response.ok) {
@@ -205,6 +266,13 @@ function displayChart(data) {
             fill: false,
             borderWidth: 2
         });
+    }
+    
+    // Check if Chart.js is loaded
+    if (typeof Chart === 'undefined') {
+        console.error('[Quality Alerts] Chart.js is not loaded! Please check if the CDN is accessible.');
+        alert('Chart.js library failed to load. Please refresh the page or check your internet connection.');
+        return;
     }
     
     // Create chart
@@ -336,15 +404,23 @@ async function loadPBDData(hospital, startDate, endDate) {
     }
     
     try {
+        console.log(`[Frontend] Fetching PBD data for ${hospital} from ${startDate} to ${endDate}...`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 360000); // 6 minute timeout (to match backend 5 min + buffer)
+        
         const response = await fetch(
-            `/api/pbd-data?hospital_name=${encodeURIComponent(hospital)}&start_date=${startDate}&end_date=${endDate}`
+            `/api/pbd-data?hospital_name=${encodeURIComponent(hospital)}&start_date=${startDate}&end_date=${endDate}`,
+            { signal: controller.signal }
         );
+        
+        clearTimeout(timeoutId);
         
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         
         const data = await response.json();
+        console.log(`[Frontend] PBD data received: ${data.daily_pbd ? data.daily_pbd.length : 0} records`);
         
         if (data.error) {
             throw new Error(data.error);
@@ -352,7 +428,13 @@ async function loadPBDData(hospital, startDate, endDate) {
         
         displayPBDChart(data);
     } catch (error) {
-        console.error('Error loading PBD data:', error);
+        if (error.name === 'AbortError') {
+            console.error('[Frontend] PBD data request timed out after 2.5 minutes');
+            loadingDiv.textContent = 'PBD query timed out. Try a shorter date range.';
+        } else {
+            console.error('[Frontend] Error loading PBD data:', error);
+            loadingDiv.textContent = `Error: ${error.message}`;
+        }
         // Don't show alert, just log it - PBD is secondary data
         displayPBDChart({ daily_pbd: [] });
     } finally {
@@ -368,6 +450,12 @@ async function loadPBDData(hospital, startDate, endDate) {
 function displayPBDChart(data) {
     const canvas = document.getElementById('pbd-chart');
     if (!canvas) return;
+    
+    // Check if Chart.js is loaded
+    if (typeof Chart === 'undefined') {
+        console.error('[Quality Alerts] Chart.js is not loaded! Cannot display PBD chart.');
+        return;
+    }
     
     const renderingContext = canvas.getContext('2d');
     
@@ -438,10 +526,13 @@ function displayPBDChart(data) {
 
 // Load and display raw data
 async function loadRawData(hospital, startDate, endDate) {
-    console.log('[Quality Alerts] Loading raw data...');
+    console.log('[Frontend] Loading raw data for:', hospital, startDate, 'to', endDate);
     try {
-        const response = await fetch(
-            `/api/raw-data?hospital_name=${encodeURIComponent(hospital)}&start_date=${startDate}&end_date=${endDate}`
+        // Backend returns database data only (no BigQuery), so short timeout is sufficient
+        const response = await fetchWithTimeout(
+            `/api/raw-data?hospital_name=${encodeURIComponent(hospital)}&start_date=${startDate}&end_date=${endDate}`,
+            {},
+            30000  // 30 second timeout (sufficient for database queries only)
         );
         
         if (!response.ok) {
@@ -449,14 +540,29 @@ async function loadRawData(hospital, startDate, endDate) {
         }
         
         const data = await response.json();
+        console.log('[Frontend] Raw data received:', data.length, 'rows');
         
         if (data.error) {
             throw new Error(data.error);
         }
         
+        // Check for November data
+        const today = new Date();
+        const currentYear = today.getFullYear();
+        const currentMonth = today.getMonth() + 1; // JavaScript months are 0-indexed
+        
+        const novData = data.filter(row => row.year === currentYear && row.month === currentMonth);
+        console.log(`[Frontend] November ${currentYear} data in response:`, novData.length, 'rows');
+        if (novData.length > 0) {
+            console.log('[Frontend] November data:', novData);
+        } else {
+            console.log('[Frontend] WARNING: No November data in response!');
+            console.log('[Frontend] Available months:', [...new Set(data.map(r => `${r.year}-${r.month.toString().padStart(2, '0')}`))].sort());
+        }
+        
         displayRawDataTable(data);
     } catch (error) {
-        console.error('Error loading raw data:', error);
+        console.error('[Frontend] Error loading raw data:', error);
         displayRawDataTable([]);
     }
 }
@@ -492,5 +598,360 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// Load model results
+async function loadModelResults(modelId) {
+    console.log('[Quality Alerts] Loading model results for:', modelId);
+    
+    const resultsContainer = document.getElementById('models-results-container');
+    const tableBody = document.getElementById('models-table-body');
+    const modelTitle = document.getElementById('model-title');
+    
+    // Show loading state
+    resultsContainer.style.display = 'block';
+    tableBody.innerHTML = '<tr><td colspan="13" class="no-data">Loading...</td></tr>';
+    
+    const modelNames = {
+        'model1': 'Model 1: Deaths > Highest (Last 3 months)',
+        'model2': 'Model 2: Deaths > Highest (Last 6 months)',
+        'model3': 'Model 3: Deaths > Avg + 1SD (Last 3 months)',
+        'model4': 'Model 4: Deaths > Avg + 1SD (Last 6 months)',
+        'model5': 'Model 5: SMR > Highest (Last 3 months)',
+        'model6': 'Model 6: SMR > Highest (Last 6 months)',
+        'model7': 'Model 7: SMR > Avg + 1SD (Last 3 months)',
+        'model8': 'Model 8: SMR > Avg + 1SD (Last 6 months)',
+        'model9': 'Model 9: Mortality % > Highest (Last 3 months)',
+        'model10': 'Model 10: Mortality % > Highest (Last 6 months)',
+        'model11': 'Model 11: Mortality % > Avg + 1SD (Last 3 months)',
+        'model12': 'Model 12: Mortality % > Avg + 1SD (Last 6 months)',
+        'model13': 'Model 13: Mortality Rate Increasing (3 Consecutive Months)'
+    };
+    
+    modelTitle.textContent = modelNames[modelId] || 'Model Results';
+    
+    try {
+        // Determine timeout based on model type and complexity
+        const isSMRModel = modelId.startsWith('model') && 
+                          ['5', '6', '7', '8'].includes(modelId.replace('model', ''));
+        // Models using 6 months of data (2, 4, 6, 8, 10, 12) need more time
+        const is6MonthModel = modelId.startsWith('model') && 
+                             ['2', '4', '6', '8', '10', '12'].includes(modelId.replace('model', ''));
+        
+        let timeout;
+        if (isSMRModel) {
+            timeout = 300000;  // 5 minutes for SMR models (need to fetch expected_death_percentage)
+        } else if (is6MonthModel) {
+            timeout = 120000;  // 2 minutes for 6-month models (more data to process)
+        } else {
+            timeout = 60000;   // 1 minute for 3-month models
+        }
+        
+        console.log(`[Quality Alerts] Fetching ${modelId} with ${timeout/1000}s timeout...`);
+        
+        const response = await fetchWithTimeout(
+            `/api/models/${modelId}`,
+            {},
+            timeout
+        );
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`[Quality Alerts] HTTP error ${response.status}:`, errorText);
+            throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
+        }
+        
+        const data = await response.json();
+        console.log(`[Quality Alerts] Received data for ${modelId}:`, data.results ? `${data.results.length} results` : 'no results');
+        
+        if (data.error) {
+            console.error(`[Quality Alerts] API returned error:`, data.error);
+            throw new Error(data.error);
+        }
+        
+        currentModelResults = data.results || [];
+        currentModelId = modelId;
+        
+        if (!Array.isArray(currentModelResults)) {
+            console.error(`[Quality Alerts] Results is not an array:`, typeof currentModelResults);
+            throw new Error('Invalid response format: results is not an array');
+        }
+        
+        console.log(`[Quality Alerts] Displaying ${currentModelResults.length} results for ${modelId}`);
+        displayModelResults(currentModelResults, modelId);
+    } catch (error) {
+        console.error('[Quality Alerts] Error loading model results:', error);
+        tableBody.innerHTML = `<tr><td colspan="13" class="no-data">Error loading results: ${error.message}</td></tr>`;
+        const hospitalCountEl = document.getElementById('hospital-count');
+        if (hospitalCountEl) {
+            hospitalCountEl.textContent = 'Error loading data';
+        }
+    }
+}
+
+// Display model results
+function displayModelResults(results, modelId) {
+    const tableBody = document.getElementById('models-table-body');
+    const hospitalCountEl = document.getElementById('hospital-count');
+    tableBody.innerHTML = '';
+    
+    // Update hospital count
+    const count = results ? results.length : 0;
+    hospitalCountEl.textContent = `${count} hospital${count !== 1 ? 's' : ''} found`;
+    
+    if (!results || results.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="13" class="no-data">No hospitals found that crossed the threshold for this model.</td></tr>';
+        hospitalCountEl.textContent = '0 hospitals found';
+        return;
+    }
+    
+    results.forEach(result => {
+        try {
+            const tr = document.createElement('tr');
+            const statusClass = result.status === 'Alert' ? 'alert-row' : '';
+            tr.className = statusClass;
+        
+            // Format value and threshold based on model type
+            let valueDisplay = '';
+            let thresholdDisplay = '';
+            
+            if (modelId === 'model13') {
+                // Model 13: Show trend information
+                if (result.trend_info) {
+                    const trend = result.trend_info;
+                    valueDisplay = `Trend: ${trend.rate1.toFixed(2)}% → ${trend.rate2.toFixed(2)}% → ${trend.rate3.toFixed(2)}%`;
+                    thresholdDisplay = `Starting: ${trend.rate1.toFixed(2)}%`;
+                } else {
+                    valueDisplay = result.mortality_rate !== undefined ? `${result.mortality_rate.toFixed(2)}%` : '-';
+                    thresholdDisplay = result.threshold !== undefined ? `${result.threshold.toFixed(2)}%` : '-';
+                }
+            } else if (modelId.startsWith('model5') || modelId.startsWith('model6') || 
+                modelId.startsWith('model7') || modelId.startsWith('model8')) {
+                // SMR models
+                if (result.smr !== undefined && result.smr !== null && !isNaN(result.smr)) {
+                    valueDisplay = `SMR: ${result.smr.toFixed(2)}`;
+                } else {
+                    valueDisplay = '-';
+                }
+                thresholdDisplay = result.threshold !== undefined && result.threshold !== null ? result.threshold.toFixed(2) : '-';
+            } else if (modelId.startsWith('model9') || modelId.startsWith('model10') || 
+                       modelId.startsWith('model11') || modelId.startsWith('model12')) {
+                // Percentage models
+                valueDisplay = result.mortality_rate !== undefined ? `${result.mortality_rate.toFixed(2)}%` : '-';
+                thresholdDisplay = result.threshold !== undefined ? `${result.threshold.toFixed(2)}%` : '-';
+            } else {
+                // Deaths models (Model 1-4)
+                valueDisplay = result.deaths !== undefined ? result.deaths : '-';
+                thresholdDisplay = result.threshold !== undefined ? result.threshold.toFixed(0) : '-';
+            }
+            
+            // Format last 6 months mortality as separate columns
+            let monthCells = ['-', '-', '-', '-', '-', '-'];
+            let monthPeriods = ['-', '-', '-', '-', '-', '-'];
+            if (result.last_6_months_mortality && Array.isArray(result.last_6_months_mortality)) {
+                result.last_6_months_mortality.forEach((m, index) => {
+                    if (index < 6) {
+                        const rate = m.mortality_rate !== undefined ? m.mortality_rate.toFixed(2) : '0.00';
+                        monthCells[index] = rate;
+                        monthPeriods[index] = m.period || '-';
+                    }
+                });
+            }
+            
+            tr.innerHTML = `
+                <td>${escapeHtml(result.hospital_name)}</td>
+                <td>${result.current_period || '-'}</td>
+                <td>${result.deaths !== undefined ? result.deaths : '-'}</td>
+                <td>${result.mortality_rate !== undefined ? result.mortality_rate.toFixed(2) + '%' : '-'}</td>
+                <td>${valueDisplay}</td>
+                <td>${thresholdDisplay}</td>
+                <td><span class="status-badge ${result.status === 'Alert' ? 'alert' : 'normal'}">${result.status || 'Normal'}</span></td>
+                <td title="${monthPeriods[0]}">${monthCells[0]}%</td>
+                <td title="${monthPeriods[1]}">${monthCells[1]}%</td>
+                <td title="${monthPeriods[2]}">${monthCells[2]}%</td>
+                <td title="${monthPeriods[3]}">${monthCells[3]}%</td>
+                <td title="${monthPeriods[4]}">${monthCells[4]}%</td>
+                <td title="${monthPeriods[5]}">${monthCells[5]}%</td>
+            `;
+            tableBody.appendChild(tr);
+        } catch (error) {
+            console.error('[Quality Alerts] Error rendering table row for hospital:', result.hospital_name, error);
+            // Add error row for this hospital instead of breaking
+            const errorRow = document.createElement('tr');
+            errorRow.innerHTML = `<td colspan="13" class="no-data">Error rendering data for ${escapeHtml(result.hospital_name || 'unknown')}: ${error.message}</td>`;
+            tableBody.appendChild(errorRow);
+        }
+    });
+}
+
+// Download model results as CSV
+function downloadModelResultsAsCSV() {
+    if (!currentModelResults || currentModelResults.length === 0) {
+        alert('No data available to download.');
+        return;
+    }
+    
+    const modelNames = {
+        'model1': 'Model 1 - Deaths > Highest (Last 3 months)',
+        'model2': 'Model 2 - Deaths > Highest (Last 6 months)',
+        'model3': 'Model 3 - Deaths > Avg + 1SD (Last 3 months)',
+        'model4': 'Model 4 - Deaths > Avg + 1SD (Last 6 months)',
+        'model5': 'Model 5 - SMR > Highest (Last 3 months)',
+        'model6': 'Model 6 - SMR > Highest (Last 6 months)',
+        'model7': 'Model 7 - SMR > Avg + 1SD (Last 3 months)',
+        'model8': 'Model 8 - SMR > Avg + 1SD (Last 6 months)',
+        'model9': 'Model 9 - Mortality % > Highest (Last 3 months)',
+        'model10': 'Model 10 - Mortality % > Highest (Last 6 months)',
+        'model11': 'Model 11 - Mortality % > Avg + 1SD (Last 3 months)',
+        'model12': 'Model 12 - Mortality % > Avg + 1SD (Last 6 months)',
+        'model13': 'Model 13 - Mortality Rate Increasing (3 Consecutive Months)'
+    };
+    
+    const modelName = modelNames[currentModelId] || currentModelId;
+    
+    // CSV Headers
+    const headers = [
+        'Hospital',
+        'Current Period',
+        'Deaths',
+        'Mortality Rate (%)',
+        'Value',
+        'Threshold',
+        'Status',
+        'Month 1 (%)',
+        'Month 2 (%)',
+        'Month 3 (%)',
+        'Month 4 (%)',
+        'Month 5 (%)',
+        'Month 6 (%)'
+    ];
+    
+    // Convert results to CSV rows
+    const csvRows = [];
+    csvRows.push(headers.join(','));
+    
+    currentModelResults.forEach(result => {
+        // Format value and threshold based on model type
+        let valueDisplay = '';
+        
+        if (currentModelId === 'model13') {
+            // Model 13: Show trend information
+            if (result.trend_info) {
+                const trend = result.trend_info;
+                valueDisplay = `${trend.rate1.toFixed(2)}% → ${trend.rate2.toFixed(2)}% → ${trend.rate3.toFixed(2)}%`;
+            } else {
+                valueDisplay = result.mortality_rate !== undefined ? result.mortality_rate.toFixed(2) : '-';
+            }
+        } else if (currentModelId.startsWith('model5') || currentModelId.startsWith('model6') || 
+            currentModelId.startsWith('model7') || currentModelId.startsWith('model8')) {
+            valueDisplay = result.smr !== undefined ? result.smr.toFixed(2) : '-';
+        } else if (currentModelId.startsWith('model9') || currentModelId.startsWith('model10') || 
+                   currentModelId.startsWith('model11') || currentModelId.startsWith('model12')) {
+            valueDisplay = result.mortality_rate !== undefined ? result.mortality_rate.toFixed(2) : '-';
+        } else {
+            valueDisplay = result.deaths !== undefined ? result.deaths : '-';
+        }
+        
+        // Format last 6 months mortality as separate columns
+        let monthValues = ['-', '-', '-', '-', '-', '-'];
+        if (result.last_6_months_mortality && Array.isArray(result.last_6_months_mortality)) {
+            result.last_6_months_mortality.forEach((m, index) => {
+                if (index < 6) {
+                    const rate = m.mortality_rate !== undefined ? m.mortality_rate.toFixed(2) : '0.00';
+                    monthValues[index] = rate;
+                }
+            });
+        }
+        
+        // Escape commas and quotes in CSV values
+        const escapeCsv = (val) => {
+            if (val === null || val === undefined) return '';
+            const str = String(val);
+            if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                return `"${str.replace(/"/g, '""')}"`;
+            }
+            return str;
+        };
+        
+        const row = [
+            escapeCsv(result.hospital_name),
+            escapeCsv(result.current_period || '-'),
+            escapeCsv(result.deaths !== undefined ? result.deaths : '-'),
+            escapeCsv(result.mortality_rate !== undefined ? result.mortality_rate.toFixed(2) : '-'),
+            escapeCsv(valueDisplay),
+            escapeCsv(result.threshold !== undefined ? result.threshold.toFixed(2) : '-'),
+            escapeCsv(result.status || 'Normal'),
+            escapeCsv(monthValues[0]),
+            escapeCsv(monthValues[1]),
+            escapeCsv(monthValues[2]),
+            escapeCsv(monthValues[3]),
+            escapeCsv(monthValues[4]),
+            escapeCsv(monthValues[5])
+        ];
+        
+        csvRows.push(row.join(','));
+    });
+    
+    // Create CSV content
+    const csvContent = csvRows.join('\n');
+    
+    // Create blob and download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    
+    // Generate filename with current date
+    const now = new Date();
+    const dateStr = now.toISOString().split('T')[0];
+    const filename = `${modelName.replace(/[^a-z0-9]/gi, '_')}_${dateStr}.csv`;
+    
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Send alert to Google Chat
+async function sendAlertToGoogleChat() {
+    if (!currentModelId) {
+        alert('Please select a model first.');
+        return;
+    }
+    
+    const sendBtn = document.getElementById('send-alert-btn');
+    const originalText = sendBtn.textContent;
+    
+    // Disable button and show loading
+    sendBtn.disabled = true;
+    sendBtn.textContent = '⏳ Sending...';
+    
+    try {
+        const response = await fetch('/api/send-alert', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                model_id: currentModelId
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert(`✅ Alert sent successfully!\n\n${result.message}`);
+        } else {
+            alert(`❌ Failed to send alert:\n\n${result.message || result.error || 'Unknown error'}`);
+        }
+    } catch (error) {
+        console.error('[Quality Alerts] Error sending alert:', error);
+        alert(`❌ Error sending alert: ${error.message}`);
+    } finally {
+        // Re-enable button
+        sendBtn.disabled = false;
+        sendBtn.textContent = originalText;
+    }
 }
 

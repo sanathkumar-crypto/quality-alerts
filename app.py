@@ -463,10 +463,82 @@ def send_alert():
         }), 500
 
 
+@app.route('/api/trigger-scheduled-alert', methods=['GET'])
+def trigger_scheduled_alert():
+    """
+    Trigger scheduled alert endpoint for Cloud Scheduler.
+    This endpoint is called by Cloud Scheduler every Monday at 9am.
+    """
+    from google_chat import send_model_alert
+    import traceback
+    
+    try:
+        # Get model_id from query parameter (default: model10)
+        model_id = request.args.get('model_id', 'model10')
+        
+        print(f"[Scheduled Alert API] Triggering alert for {model_id}...")
+        print(f"[Scheduled Alert API] Request from: {request.remote_addr}")
+        
+        try:
+            result = send_model_alert(model_id)
+            
+            # Return success even if no hospitals meet criteria (alert was sent)
+            return jsonify({
+                'success': result.get('success', False),
+                'message': result.get('message', 'Alert processed'),
+                'hospitals_count': result.get('hospitals_count', 0),
+                'webhooks_sent': result.get('webhooks_sent', 0),
+                'webhooks_total': result.get('webhooks_total', 0),
+                'model_id': model_id,
+                'timestamp': datetime.now().isoformat()
+            }), 200
+        
+        except ValueError as ve:
+            # This is likely the webhook URL error
+            error_msg = str(ve)
+            print(f"[Scheduled Alert API] ValueError in send_model_alert: {error_msg}")
+            traceback.print_exc()
+            return jsonify({
+                'error': error_msg,
+                'success': False,
+                'message': error_msg,
+                'model_id': model_id,
+                'timestamp': datetime.now().isoformat()
+            }), 500
+        
+        except Exception as inner_e:
+            error_msg = f"Error in send_model_alert: {str(inner_e)}"
+            print(f"[Scheduled Alert API] Exception in send_model_alert: {error_msg}")
+            traceback.print_exc()
+            return jsonify({
+                'error': error_msg,
+                'success': False,
+                'message': error_msg,
+                'model_id': model_id,
+                'timestamp': datetime.now().isoformat()
+            }), 500
+    
+    except Exception as e:
+        error_msg = f"Error processing trigger-scheduled-alert request: {str(e)}"
+        print(f"[Scheduled Alert API] Error: {error_msg}")
+        traceback.print_exc()
+        return jsonify({
+            'error': error_msg,
+            'success': False,
+            'message': error_msg,
+            'timestamp': datetime.now().isoformat()
+        }), 500
+
+
 if __name__ == '__main__':
+    # Get port from environment variable (Cloud Run sets PORT, default to 3000 for local)
+    port = int(os.getenv('PORT', 3000))
+    
+    # Disable debug mode in production (Cloud Run sets FLASK_ENV=production)
+    debug_mode = os.getenv('FLASK_ENV', 'development') != 'production'
+    
     # Set use_reloader=False to prevent double-process issues in production
-    # Debug mode can be enabled but reloader disabled for more stable operation
-    app.run(debug=True, host='0.0.0.0', port=3000, use_reloader=False)
+    app.run(debug=debug_mode, host='0.0.0.0', port=port, use_reloader=False)
 
 
 

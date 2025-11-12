@@ -1,0 +1,69 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Environment files (will be set as Cloud Run env vars)
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+
+# Database files (ephemeral in Cloud Run)
+*.db
+*.sqlite
+*.sqlite3
+
+# Documentation
+*.md
+!README.md
+
+# Deployment scripts (not needed in container)
+deploy.sh
+setup_*.sh
+start_server.sh
+restart_and_test.sh
+run_query.sh
+
+# Service files
+*.service
+
+# Test files
+test_*.py
+*_test.py
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+

@@ -25,6 +25,12 @@ logs/
 .env
 .env.local
 
+# Service account keys (NEVER commit these!)
+*service-account*.json
+*service_account*.json
+*-key.json
+*-credentials.json
+
 # IDE
 .vscode/
 .idea/
